@@ -40,6 +40,7 @@ def CPR_group_test(df_trajs, n, daily_test_cap):
     np.random.shuffle(group_name)
     group_name = group_name//n
     df_v_load = df_trajs[['log10vload','is_I']].copy()
+    df_v_load['is_I'] = 1*df_v_load['is_I']
     df_v_load['group_name'] = group_name
     # calculate each load
     df_v_load['vload'] = 10**df_v_load['log10vload']
@@ -65,6 +66,7 @@ def CPR_group_test(df_trajs, n, daily_test_cap):
     # note that cpr and se are not limited by the capacity, here we calculate over all population
     total_infected_group = (df_group_vl['num_I_group']>0).sum()
     total_test_out_group = df_group_vl['test_positive_group'].sum()
+    import pdb;pdb.set_trace()
     if df_group_vl.loc[df_group_vl['test_positive_group'],'num_I_group'].min()==0:
         print('possible error: positive for non I')
         import pdb; pdb.set_trace()
