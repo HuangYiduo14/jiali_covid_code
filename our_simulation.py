@@ -3,7 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 EPS = 1e-12
-detectable_load = 3
+detectable_load = 2
 file_name='used_pars_swab_1.csv'
 mcmc_result = pd.read_csv(file_name)
 mcmc_result = mcmc_result.dropna()
@@ -146,15 +146,13 @@ def calculate_v_load(df_trajs, is_random_day=False):
     return df_trajs
 
 # first we consider SIR model
-def SIRsimulation(N, daily_test_cap, n_list, I0=100, asymptomatic=0.65, results_delay=0, R0=2.5, R02=0.8, R03=1.5, tmax=365,t_start=80,t_end=150):
+def SIRsimulation(N, daily_test_cap, n_list, I0=100, R0=2.5, R02=0.8, R03=1.5, tmax=365,t_start=80,t_end=150):
     '''
     run SIR simulation
     :param N: population size
     :param daily_test_cap: daily test capacity (all tested)
     :param n_list: list of n that we want in our experiments
     :param I0: number of infections at day 0
-    :param asymptomatic: asymptomatic rate
-    :param results_delay: how long to get result
     :param R0: reproduction rate
     :param R02: reproduction rate after t_start
     :param R03: reproduction rate after t_end
@@ -245,7 +243,7 @@ def draw_curves(p_list, n_list, data, name='test',save=False):
     df.plot()
     plt.show()
     plt.title(name)
-    plt.xscale('log')
+    # plt.xscale('log')
     if save:
         plt.savefig(name+'_png')
 
@@ -272,8 +270,6 @@ for p in p_random:
     cpr_table1, se_table1, _ = SIRsimulation(N, daily_test_cap, n_list, tmax=1, I0=I0)
     cpr_random.append(cpr_table1[0])
     se_random.append(se_table1[0])
-
-
 # draw all figs
 draw_curves(p_up, n_list, se_table_up, 'se,up',True)
 draw_curves(p_down, n_list, se_table_down, 'se,down',True)
@@ -281,6 +277,11 @@ draw_curves(p_up, n_list, cpr_table_up, 'cpr,up',True)
 draw_curves(p_down, n_list, cpr_table_down, 'cpr,down',True)
 draw_curves(p_random, n_list, se_random, 'se,random',True)
 draw_curves(p_random, n_list, cpr_random, 'cpr,random',True)
+
+
+
+
+
 
 
 # <<test of data initialization: PASSED
