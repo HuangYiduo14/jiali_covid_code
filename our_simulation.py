@@ -205,7 +205,7 @@ def SIRsimulation(N, daily_test_cap, n_list, I0=100, R0=2.5, R02=0.8, R03=1.5, t
         neg_dS = round(beta_t*S*I/N) # calculate new infections (-dS)
         if S-neg_dS<0:
             neg_dS = S
-        new_infected = trajs.loc[trajs['is_S']].sample(neg_dS,replace=False)
+        new_infected = trajs.loc[trajs['is_S']].sample(int(neg_dS),replace=False)
         trajs.loc[new_infected.index,'day'] = 0
         trajs.loc[new_infected.index,'is_I'] = True
         trajs.loc[new_infected.index, 'is_S'] = False
