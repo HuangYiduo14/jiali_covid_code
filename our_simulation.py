@@ -29,6 +29,9 @@ mcmc_result.loc[~is_tg_valid,'t00'] = 0
 mcmc_result.loc[~is_tg_valid,'t01'] = mcmc_result.loc[~is_tg_valid,'tw']+mcmc_result.loc[~is_tg_valid,'tinc']
 
 
+
+
+
 def CPR_group_test(df_trajs, n, daily_test_cap):
     # do group test for each group with given n and curve
     # make groupname
@@ -56,12 +59,39 @@ def CPR_group_test(df_trajs, n, daily_test_cap):
     df_v_load = df_v_load.join(df_group_vl,on='group_name',how='left',rsuffix='_group') #join table on group names
     df_v_load['test_positive_ind'] = df_v_load['get_test'] & df_v_load['test_positive_group'] &(
         df_v_load['vload']>10**detectable_load) # test_positive_ind: if this person get tested and the result is positive
-    # TODO: detectable_load for individual or group difference?
-    #total_tested_infected = (df_v_load['is_I'] & df_v_load['get_test']).s
+    total_tested_infected = (df_v_load['is_I'] & df_v_load['get_test']).sum()
     total_patient_found = df_v_load['test_positive_ind'].sum()
-    #se = total_patient_found/total_tested_infected
-    cpr = total_patient_found/daily_test_cap
-    return df_v_load, 0, cpr
+
+    # note that cpr and se are not limited by the capacity, here we calculate over all population
+    total_infected_group = (df_group_vl['num_I_group']>0).sum()
+    total_test_out_group = df_group_vl['test_positive_group'].sum()
+    if df_group_vl.loc[df_group_vl['test_positive_group'],'num_I_group'].min()==0:
+        print('possible error: positive for non I')
+        import pdb; pdb.set_trace()
+    # question: some R has large VL
+    if total_infected_group < EPS:
+        se = 0
+    else:
+        se = total_test_out_group/total_infected_group
+    #cpr = total_patient_found/daily_test_cap
+    total_patient_found_theory = (df_v_load['test_positive_group']&(df_v_load['vload']>10**detectable_load)).sum()
+    total_test_needed = df_group_vl['number_of_test_group'].sum()
+    cpr = total_patient_found_theory / total_test_needed
+    return df_v_load, se, cpr
+
+def give_se_cpr(df_trajs,daily_test_cap,n_list):
+    cpr_list = []
+    traj_list = []
+    se_list = []
+    for n in n_list:
+        df_v_load, se, cpr = CPR_group_test(df_trajs, n, daily_test_cap)
+        cpr_list.append(cpr)
+        traj_list.append(df_v_load)
+        se_list.append(se)
+    return cpr_list, se_list
+
+
+
 
 def find_opt_n(df_trajs, daily_test_cap):
     '''
@@ -71,7 +101,6 @@ def find_opt_n(df_trajs, daily_test_cap):
     :param daily_test_cap: capacity, int
     :return: optimal n and df with a new col: 'is_removed'
     '''
-    # TODO: what n to use? should we use optimal n for each time? or fixed?
     n_list = list(range(1,10))
     cpr_list = []
     traj_list = []
@@ -88,15 +117,20 @@ def find_opt_n(df_trajs, daily_test_cap):
     # plt.show()
     return n_star, df_trajs
 
-def calculate_v_load(df_trajs):
+def calculate_v_load(df_trajs, is_random_day=False):
     '''
     calculate viral load using trajectory dataframe
     :param df_trajs: updated table
     :return: updated table
     '''
+    if is_random_day:
+        df_trajs['day1'] = df_trajs['day']
+        df_trajs['day'] = (df_trajs['tw'].values+df_trajs['tinc'].values)* np.random.rand(df_trajs.shape[0]).astype(int)
+        df_trajs.loc[df_trajs['is_S'],'day'] = -1
+        df_trajs.loc[df_trajs['is_R'],'day'] = df_trajs.loc[df_trajs['is_R'],'day1']
+
     mask0 = (df_trajs['day']<=df_trajs['t00'])|(df_trajs['day']>=df_trajs['t01'])
     df_trajs.loc[mask0,'log10vload'] = 0
-    import pdb; pdb.set_trace()
 
     mask1 = (df_trajs['day']>df_trajs['t00'])&(df_trajs['day']<=df_trajs['tpg']) # incresing
     df_temp1 = df_trajs['vp']/(df_trajs['tpg']-df_trajs['t00'])*(df_trajs['day']-df_trajs['t00'])
@@ -104,16 +138,20 @@ def calculate_v_load(df_trajs):
 
     mask2 = (df_trajs['day']>df_trajs['tpg'])&(df_trajs['day']<=df_trajs['t01']) # decresing
     df_temp2 = df_trajs['vp'] / (df_trajs['t01'] - df_trajs['tpg']) * (
-                df_trajs['day'] - df_trajs['t00'])
+                df_trajs['t01']-df_trajs['day']) # there's a bug here << critical : HYD
     df_trajs.loc[mask2, 'log10vload'] = df_temp2.loc[mask2]
+
+    if is_random_day:
+        df_trajs['day'] = df_trajs['day1']
     return df_trajs
 
 # first we consider SIR model
-def SIRsimulation(N, daily_test_cap, I0=100, asymptomatic=0.65, results_delay=0, R0=2.5, R02=0.8, R03=1.5, tmax=365,t_start=80,t_end=150):
+def SIRsimulation(N, daily_test_cap, n_list, I0=100, asymptomatic=0.65, results_delay=0, R0=2.5, R02=0.8, R03=1.5, tmax=365,t_start=80,t_end=150):
     '''
     run SIR simulation
     :param N: population size
     :param daily_test_cap: daily test capacity (all tested)
+    :param n_list: list of n that we want in our experiments
     :param I0: number of infections at day 0
     :param asymptomatic: asymptomatic rate
     :param results_delay: how long to get result
@@ -149,22 +187,32 @@ def SIRsimulation(N, daily_test_cap, I0=100, asymptomatic=0.65, results_delay=0,
     # set day 0 patients
     trajs.loc[:I0 - 1, 'is_I'] = True
     trajs.loc[:I0 - 1, 'is_S'] = False
-    trajs.loc[:I0-1,'day'] = (trajs.loc[:I0-1,'tinc'].values * np.random.rand(I0)).astype(int) # we assume all these patients are incu
+    trajs.loc[:I0-1,'day'] = ((trajs.loc[:I0-1,'tinc'].values+trajs.loc[:I0-1,'tw'].values) * np.random.rand(I0)).astype(int) # we assume all these patients are incu
     # note that in pandas loc, we have to subtract 1 to make dim correct
+    cpr_table = []
+    se_table = []
+    p_list = []
     for t in range(tmax):
-        print('day', t)
+
+        print('day', t,'='*100)
         beta_t = beta(t)
         I = trajs['is_I'].sum()
         S = trajs['is_S'].sum()
         R = trajs['is_R'].sum()
-        print('remain pop', S+R+I)
+        print('S:', S, ', I:',I,', R:',R)
+
         assert S+R+I == trajs.shape[0]
         # -- calculate viral load --
         trajs = calculate_v_load(trajs)
-        n_star, trajs = find_opt_n(trajs, daily_test_cap)
+        #n_star, trajs = find_opt_n(trajs, daily_test_cap)
+        cpr_t_list, se_t_list = give_se_cpr(trajs, daily_test_cap, n_list)
+        p_t = I/trajs.shape[0]
+        p_list.append(p_t)
+        cpr_table.append(cpr_t_list)
+        se_table.append(se_t_list)
         # -- update according to SIR --
         # S -> I
-        neg_dS = round(beta_t*S*I) # calculate new infections (-dS)
+        neg_dS = round(beta_t*S*I/N) # calculate new infections (-dS)
         if S-neg_dS<0:
             neg_dS = S
         new_infected = trajs.loc[trajs['is_S']].sample(neg_dS,replace=False)
@@ -176,10 +224,10 @@ def SIRsimulation(N, daily_test_cap, I0=100, asymptomatic=0.65, results_delay=0,
         trajs.loc[is_removed_undetected, 'is_I'] = False
         trajs.loc[is_removed_undetected, 'is_R'] = True
         # I -> detected and removed
-        trajs = trajs.loc[~trajs['is_removed']] # TODO: how to remove? I->symptom ?
-        import pdb; pdb.set_trace()
+        #trajs = trajs.loc[~trajs['is_removed']] # TODO: how to remove? I->symptom ?
         # add one day
-        trajs['day']+=1
+        trajs.loc[trajs['is_I'],'day'] += 1
+        trajs.loc[trajs['is_R'], 'day'] += 1
         S_list.append(S)
         I_list.append(I)
         R_list.append(R)
@@ -188,11 +236,67 @@ def SIRsimulation(N, daily_test_cap, I0=100, asymptomatic=0.65, results_delay=0,
     plt.plot(R_list,label='R')
     plt.legend()
     plt.show()
-    return
+    return cpr_table, se_table, p_list
 
-N=100000
+def draw_curves(p_list, n_list, data, name='test',save=False):
+    df = pd.DataFrame(data,columns=n_list)
+    df['p'] = p_list
+    df.set_index('p',inplace=True)
+    df.plot()
+    plt.show()
+    plt.title(name)
+    plt.xscale('log')
+    if save:
+        plt.savefig(name+'_png')
+
+# test 1. use p in the SIR model
+N=1000000
 daily_test_cap = 10000
-SIRsimulation(N, daily_test_cap)
+n_list = [1,2,3,5,10,15,25,50]
+cpr_table, se_table, p_list = SIRsimulation(N, daily_test_cap, n_list,tmax=100)
+peak_t = p_list.index(max(p_list))
+p_up = p_list[:peak_t]
+p_down = p_list[peak_t:]
+cpr_table_up = cpr_table[:peak_t]
+cpr_table_down = cpr_table[peak_t:]
+se_table_up = se_table[:peak_t]
+se_table_down = se_table[peak_t:]
+
+# test 2. assume random day
+p_random = [0.01*i for i in range(1,100)]
+cpr_random = []
+se_random = []
+for p in p_random:
+    print('random p', p)
+    I0 = int(p*N)
+    cpr_table1, se_table1, _ = SIRsimulation(N, daily_test_cap, n_list, tmax=1, I0=I0)
+    cpr_random.append(cpr_table1[0])
+    se_random.append(se_table1[0])
+
+
+# draw all figs
+draw_curves(p_up, n_list, se_table_up, 'se,up',True)
+draw_curves(p_down, n_list, se_table_down, 'se,down',True)
+draw_curves(p_up, n_list, cpr_table_up, 'cpr,up',True)
+draw_curves(p_down, n_list, cpr_table_down, 'cpr,down',True)
+draw_curves(p_random, n_list, se_random, 'se,random',True)
+draw_curves(p_random, n_list, cpr_random, 'cpr,random',True)
+
+
+# <<test of data initialization: PASSED
+# mcmc_result1 = mcmc_result.copy()
+# mcmc_result1['day'] = mcmc_result1['tg']
+# mcmc_result1 = calculate_v_load(mcmc_result1)
+# print('valid min and max',mcmc_result1.loc[mcmc_result1['is_tg_valid'],'log10vload'].min(),mcmc_result1.loc[mcmc_result1['is_tg_valid'],'log10vload'].max())
+# mcmc_result1 = mcmc_result.copy()
+# mcmc_result1['day'] = mcmc_result1['tpg']
+# mcmc_result1 = calculate_v_load(mcmc_result1)
+# mcmc_result1['diff'] = mcmc_result1['log10vload'] - mcmc_result1['vp']
+# print('valid min and max',mcmc_result1['diff'].min(), mcmc_result1['diff'].max())
+# mcmc_result1 = mcmc_result.copy()
+# mcmc_result1['day'] = mcmc_result1['tinc']+mcmc_result1['tw']
+# mcmc_result1 = calculate_v_load(mcmc_result1)
+# print('valid min and max',mcmc_result1.loc[mcmc_result1['is_tg_valid'],'log10vload'].min(),mcmc_result1.loc[mcmc_result1['is_tg_valid'],'log10vload'].max())
 
 
 # def simulate_se_sp(p,n_list,asym_rate = 0.5,pop=10000000,L=5):
