@@ -258,6 +258,7 @@ print('>> n_star curve generated','**'*100)
 N=100000
 I0 = 100
 capcity = N//20
+# pay attention to default variables
 
 result_ind_period = SIRsimulation(N, table_n_star=df_cpr, exp_name='individual_periodical',
                             n_star_policy='fixed',test_policy = 'periodical', I0=I0)
