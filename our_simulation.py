@@ -76,18 +76,20 @@ def CPR_group_test(df_trajs, n, daily_test_cap, se_i=0.9):
     # question: some R has large VL
     if total_infected_group < EPS:
         se = 1
+        assert df_v_load['is_I'].sum()<EPS
     else:
         se = total_test_out_group / total_infected_group
+
     if se<EPS:
-        se = 1
+        return None,None,None,None
     if prevalence<EPS:
-        prevalence = 1/N
+        return None,None,None,None
     if se_i < EPS:
-        se_i = 1
+        return None,None,None,None
     # cpr = total_patient_found/daily_test_cap
     total_patient_found_theory = (df_v_load['test_positive_group'] & (df_v_load['vload'] > 10 ** detectable_load)).sum()
     if total_patient_found_theory<EPS:
-        total_patient_found_theory=1
+        return None,None,None,None
     #    import pdb; pdb.set_trace()
     total_test_needed = df_group_vl['number_of_test_group'].sum()
     cpr = total_test_needed / total_patient_found_theory
@@ -101,16 +103,14 @@ def CPR_group_test(df_trajs, n, daily_test_cap, se_i=0.9):
 def give_se_cpr(df_trajs, daily_test_cap, n_list):
     cpr_list = []
     cpr1_list = []
-    traj_list = []
     se_list = []
     for n in n_list:
         if n == 1:
-            df_v_load, se, cpr, cpr1 = CPR_group_test(df_trajs, n, daily_test_cap)
+            _, se, cpr, cpr1 = CPR_group_test(df_trajs, n, daily_test_cap)
             se_i = se
         else:
-            df_v_load, se, cpr, cpr1 = CPR_group_test(df_trajs, n, daily_test_cap, se_i)
+            _, se, cpr, cpr1 = CPR_group_test(df_trajs, n, daily_test_cap, se_i)
         cpr_list.append(cpr)
-        traj_list.append(df_v_load)
         se_list.append(se)
         cpr1_list.append(cpr1)
     return cpr_list, se_list, cpr1_list
@@ -212,7 +212,7 @@ def SIRsimulation_get_curve(N, daily_test_cap, n_list, I0=100, R0=2.5, R02=0.8, 
         # -- calculate viral load --
         trajs = calculate_v_load(trajs)
         # n_star, trajs = find_opt_n(trajs, daily_test_cap)
-        cpr_t_list, se_t_list, cpr1_t_list = give_se_cpr(trajs, daily_test_cap, n_list)
+        cpr_t_list, se_t_list, cpr1_t_list= give_se_cpr(trajs, daily_test_cap, n_list)
         p_t = I / trajs.shape[0]
         p_list.append(p_t)
         cpr_table.append(cpr_t_list)
@@ -264,7 +264,7 @@ def save_data(p_list, n_list, data, name='test', save=False):
 def generate_cpr_se_curve(n_list, exp_number=1, N0=1000000, tmax=100):
     p_up, p_down, cpr_table_up, cpr_table_down, se_table_up, se_table_down, cpr1_table_up, cpr1_table_down = [], [], [], [], [], [], [], []
     for i in range(exp_number):
-        N = int(N0//100+99*N0//100*np.random.rand())
+        N = 100000
         print('>>exp',i,'**'*100)
         print('current_size',len(p_up))
         I0 = int(N//2000+N*np.random.rand()//2000)
@@ -289,13 +289,15 @@ def generate_cpr_se_curve(n_list, exp_number=1, N0=1000000, tmax=100):
 
 def plot_scatter(table,n_list):
     for n in n_list:
-        plt.scatter(table['p'],table[n],label=n)
+        plt.scatter(table['p'],table[str(n)],label=n)
     plt.legend()
     plt.show()
 
-n_list = [1, 2, 3, 4, 5, 10, 15]
-cpr1_table_up,cpr1_table_down,se_table_up,se_table_down,cpr_table_up,cpr_table_down=generate_cpr_se_curve(n_list,50)
-plot_scatter(cpr1_table_up,n_list)
+
+if __name__=='__main__':
+    n_list = [1, 2, 3, 4, 5, 10, 15]
+    cpr1_table_up,cpr1_table_down,se_table_up,se_table_down,cpr_table_up,cpr_table_down=generate_cpr_se_curve(n_list,50)
+    plot_scatter(cpr1_table_up,n_list)
 
 
 
