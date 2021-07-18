@@ -17,6 +17,7 @@ plt.plot(result_nstar1_period['S'],label='n1, period')
 plt.plot(result_nstar7_period['S'],label='n7, period')
 plt.legend()
 plt.title('S curve for all')
+plt.show()
 
 plt.figure(1)
 plt.plot(result_ind_round['I'],label='individual, round')
@@ -27,7 +28,7 @@ plt.plot(result_nstar1_period['I'],label='n1, period')
 plt.plot(result_nstar7_period['I'],label='n7, period')
 plt.legend()
 plt.title('I curve for all')
-
+plt.show()
 
 plt.figure(2)
 plt.plot(result_ind_round['number_of_total_tests'].cumsum(),label='individual, round')
@@ -38,3 +39,4 @@ plt.plot(result_nstar1_period['number_of_total_tests'].cumsum(),label='n1, perio
 plt.plot(result_nstar7_period['number_of_total_tests'].cumsum(),label='n7, period')
 plt.legend()
 plt.title('test number total for all')
+plt.show()

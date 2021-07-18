@@ -68,7 +68,7 @@ def group_test(df_trajs, n, daily_test_cap, test_policy='periodical'):
     return df_v_load, number_of_total_tests, number_of_group_tests
 
 # first we consider SIR model
-def SIRsimulation(N, n_list, table_n_star,
+def SIRsimulation(N, table_n_star,
                             n_star_policy='daily',test_policy = 'periodical', period = 7, round_daily_test_cap=10000,fixed_n=3,
                             T_lead = 1, I0=100, R0=2.5, R02=0.8, R03=1.5, tmax=365, t_start=80,t_end=150, sym_ratio=0.4, exp_name='default_exp'):
     '''
@@ -256,28 +256,24 @@ df_cpr['n_star'] = df_cpr.idxmin(axis=1)
 print('>> n_star curve generated','**'*100)
 
 N=100000
+I0 = 100
+capcity = N//20
 
-result_ind_period = SIRsimulation(N, n_list, table_n_star=df_cpr, exp_name='individual_periodical',
-                            n_star_policy='fixed',test_policy = 'periodical', period = 7, round_daily_test_cap=10000, fixed_n=1,
-                            T_lead = 1, I0=100, R0=2.5, R02=0.8, R03=1.5, tmax=100, t_start=80,t_end=150, sym_ratio=0.4)
+result_ind_period = SIRsimulation(N, table_n_star=df_cpr, exp_name='individual_periodical',
+                            n_star_policy='fixed',test_policy = 'periodical', I0=I0)
 
-result_ind_round = SIRsimulation(N, n_list, table_n_star=df_cpr, exp_name='individual_round',
-                            n_star_policy='fixed',test_policy = 'round', period = 7, round_daily_test_cap=N//20, fixed_n=1,
-                            T_lead = 1, I0=100, R0=2.5, R02=0.8, R03=1.5, tmax=100, t_start=80,t_end=150, sym_ratio=0.4)
+result_ind_round = SIRsimulation(N, table_n_star=df_cpr, exp_name='individual_round',
+                            n_star_policy='fixed',test_policy = 'round', I0=I0, round_daily_test_cap=capcity)
 
-result_nstar1_period = SIRsimulation(N, n_list, table_n_star=df_cpr, exp_name='nstar1_periodical',
-                            n_star_policy='daily',test_policy = 'periodical', period = 7, round_daily_test_cap=10000,
-                            T_lead = 1, I0=100, R0=2.5, R02=0.8, R03=1.5, tmax=100, t_start=80,t_end=150, sym_ratio=0.4)
+result_nstar1_period = SIRsimulation(N, table_n_star=df_cpr, exp_name='nstar1_periodical',
+                            n_star_policy='daily',test_policy = 'periodical',I0=I0)
 
-result_nstar1_round = SIRsimulation(N, n_list, table_n_star=df_cpr, exp_name='nstar1_round',
-                            n_star_policy='daily',test_policy = 'round', period = 7, round_daily_test_cap=N//20,
-                            T_lead = 1, I0=100, R0=2.5, R02=0.8, R03=1.5, tmax=100, t_start=80,t_end=150, sym_ratio=0.4)
+result_nstar1_round = SIRsimulation(N, table_n_star=df_cpr, exp_name='nstar1_round',
+                            n_star_policy='daily',test_policy = 'round', I0=I0,round_daily_test_cap=capcity)
 
-result_nstar7_period = SIRsimulation(N, n_list, table_n_star=df_cpr, exp_name='nstar7_periodical',
-                            n_star_policy='weekly',test_policy = 'periodical', period = 7, round_daily_test_cap=10000,
-                            T_lead = 1, I0=100, R0=2.5, R02=0.8, R03=1.5, tmax=100, t_start=80,t_end=150, sym_ratio=0.4)
+result_nstar7_period = SIRsimulation(N, table_n_star=df_cpr, exp_name='nstar7_periodical',
+                            n_star_policy='weekly',test_policy = 'periodical',I0=I0)
 
-result_nstar7_round = SIRsimulation(N, n_list, table_n_star=df_cpr, exp_name='nstar7_round',
-                            n_star_policy='weekly',test_policy = 'round', period = 7, round_daily_test_cap=N//20,
-                            T_lead = 1, I0=100, R0=2.5, R02=0.8, R03=1.5, tmax=100, t_start=80,t_end=150, sym_ratio=0.4)
+result_nstar7_round = SIRsimulation(N, table_n_star=df_cpr, exp_name='nstar7_round',
+                            n_star_policy='weekly',test_policy = 'round', I0=I0,round_daily_test_cap=capcity)
 
