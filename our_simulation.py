@@ -4,6 +4,8 @@ import matplotlib.pyplot as plt
 
 EPS = 1e-12
 detectable_load = 2
+n_list = [1, 2, 3, 4, 5,6,7,8,9,10, 15,20,25,30]
+
 file_name = 'used_pars_swab_1.csv'
 mcmc_result = pd.read_csv(file_name)
 mcmc_result = mcmc_result.dropna()
@@ -299,7 +301,6 @@ if __name__=='__main__':
     se_random = []
     cpr1_random = []
     N = 200000
-    n_list = [1, 2, 3, 4, 5,6,7,8,9,10, 15,20,25,30]
     daily_test_cap = 1000
     k=0
     for p in p_random:
