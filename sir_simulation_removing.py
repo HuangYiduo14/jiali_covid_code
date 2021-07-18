@@ -2,6 +2,7 @@ from our_simulation import mcmc_result, calculate_v_load, EPS, n_list, detectabl
 import pandas as pd
 import numpy as np
 import statsmodels.api as sm
+import sys
 import matplotlib.pyplot as plt
 lowess = sm.nonparametric.lowess
 color_table = {1:'b', 2:'r', 3:'g', 4:'c', 30:'m', 10:'y'}
@@ -60,14 +61,16 @@ def group_test(df_trajs, n, daily_test_cap, test_policy='periodical'):
                 'vload'] > 10 ** detectable_load)  # test_positive_ind: if this person get tested and the result is positive
     assert (1*df_v_load['is_I']-1*df_v_load['test_positive_ind']).min()>=0
     number_of_total_tests = (df_group_vl['number_of_test_group']*df_group_vl['get_test']).sum()
+    number_of_group_tests = df_group_vl['get_test'].sum()
     if test_policy=='round':
         assert number_of_total_tests<=daily_test_cap
-    return df_v_load, number_of_total_tests
+
+    return df_v_load, number_of_total_tests, number_of_group_tests
 
 # first we consider SIR model
 def SIRsimulation(N, n_list, table_n_star,
                             n_star_policy='daily',test_policy = 'periodical', period = 7, round_daily_test_cap=10000,fixed_n=3,
-                            T_lead = 1, I0=100, R0=2.5, R02=0.8, R03=1.5, tmax=365, t_start=80,t_end=150, sym_ratio=0.4):
+                            T_lead = 1, I0=100, R0=2.5, R02=0.8, R03=1.5, tmax=365, t_start=80,t_end=150, sym_ratio=0.4, exp_name='default_exp'):
     '''
     run SIR simulation
     :param N: population size
@@ -94,8 +97,17 @@ def SIRsimulation(N, n_list, table_n_star,
     here cpr1 is calculated using formula (1)
     cpr is calculated using from simulation
     '''
+    file_log = open('exp0_'+exp_name+'.txt','w')
+    print(exp_name, ':', file=file_log)
+    print(sys.argv[1:],file=file_log)
+    file_log.close()
+    file_log = open('exp0_'+exp_name + '.txt', 'a')
+    print('='*100,file=file_log)
+    file_log.flush()
+    print('S, I, R, Q, SQ, total_tested_individual, positive_results, number_of_total_tests, n_star, number_of_group_tests', file=file_log)
+    col_names = ['S', 'I', 'R', 'Q', 'SQ', 'total_tested_individual', 'positive_results', 'number_of_total_tests', 'n_star', 'number_of_group_tests']
+    log_exp_table = []
     # -- define beta as a function of time --
-    S_list,I_list,R_list,Q_list,SQ_list = [],[],[],[],[]
     gamma = 1. / 7
     def beta(t):
         if t < t_start:
@@ -161,7 +173,7 @@ def SIRsimulation(N, n_list, table_n_star,
                 trajs.loc[~trajs['will_test'],'period_test_in_days'] = big_M
             trajs['need_test_today'] = (trajs['period_test_in_days']==0)&(trajs['is_I']|trajs['is_R']|trajs['is_S'])
         # step 2. do test
-        test_result, number_of_total_tests = group_test(trajs,n_star,daily_test_cap=round_daily_test_cap, test_policy=test_policy)
+        test_result, number_of_total_tests, number_of_group_tests = group_test(trajs,n_star,daily_test_cap=round_daily_test_cap, test_policy=test_policy)
         # step 3. update info, especially day_until_remove
         trajs['get_test'] = False
         trajs['test_positive_ind'] = False
@@ -190,8 +202,6 @@ def SIRsimulation(N, n_list, table_n_star,
         # I -> SQ
         is_removed_symptom = trajs['can_be_sym']&(trajs['day'] > trajs['tinc'])&(trajs['is_I'])
         trajs.loc[is_removed_symptom,'day_until_remove'] = big_M
-        if test_policy=='round':
-            trajs.loc[is_removed_symptom, 'round_test_needed'] = False
         trajs.loc[is_removed_symptom, 'is_I'] = False
         trajs.loc[is_removed_symptom, 'is_SQ'] = True
         # I,Q,SQ -> R
@@ -210,27 +220,22 @@ def SIRsimulation(N, n_list, table_n_star,
             if trajs['round_test_needed'].sum() == 0:
                 trajs['round_test_needed'] = trajs['will_test'] & (trajs['is_I'] | trajs['is_R'] | trajs['is_S'])
                 print('old round ended, new round start: all from I')
+            else:
+                trajs['round_test_needed'] = trajs['round_test_needed'] & (
+                            trajs['is_I'] | trajs['is_R'] | trajs['is_S'])
         else:
             trajs['period_test_in_days'] -= 1
-
         # add one day
         trajs.loc[trajs['is_I'], 'day'] += 1
         trajs.loc[trajs['is_R'], 'day'] += 1
         trajs.loc[trajs['is_Q'],'day']+=1
         trajs.loc[trajs['is_SQ'], 'day'] += 1
-
-        S_list.append(S)
-        I_list.append(I)
-        R_list.append(R)
-        Q_list.append(Q)
-        SQ_list.append(SQ)
-    plt.plot(S_list,label='S')
-    plt.plot(I_list,label='I')
-    plt.plot(R_list,label='R')
-    plt.plot(Q_list,label='Q')
-    plt.plot(SQ_list,label='SQ')
-    return
-
+        log_exp_table.append([S,I,R,Q,SQ,trajs['get_test'].sum(),trajs['test_positive_ind'].sum(),number_of_total_tests,n_star,number_of_group_tests])
+        file_log.flush()
+    file_log.close()
+    df = pd.DataFrame(log_exp_table,columns=col_names)
+    df.to_csv('exp_'+exp_name+'.csv')
+    return df
 df_se = lowess_data(n_list,df_se)
 # df_se.to_csv('se_data_lws.csv',index=False)
 # df_se = pd.read_csv('se_data_lws.csv').drop('Unnamed: 0',axis=1)
@@ -250,13 +255,58 @@ df_cpr['n_star'] = df_cpr.idxmin(axis=1)
 # df_cpr['n_star'].plot()
 print('>> n_star curve generated','**'*100)
 
-N=1000000
+N=100000
 
+result_ind_period = SIRsimulation(N, n_list, table_n_star=df_cpr, exp_name='individual_periodical',
+                            n_star_policy='fixed',test_policy = 'periodical', period = 7, round_daily_test_cap=10000, fixed_n=1,
+                            T_lead = 1, I0=100, R0=2.5, R02=0.8, R03=1.5, tmax=100, t_start=80,t_end=150, sym_ratio=0.4)
 
-SIRsimulation(N, n_list, table_n_star=df_cpr,
+result_ind_round = SIRsimulation(N, n_list, table_n_star=df_cpr, exp_name='individual_round',
+                            n_star_policy='fixed',test_policy = 'round', period = 7, round_daily_test_cap=N//20, fixed_n=1,
+                            T_lead = 1, I0=100, R0=2.5, R02=0.8, R03=1.5, tmax=100, t_start=80,t_end=150, sym_ratio=0.4)
+
+result_nstar1_period = SIRsimulation(N, n_list, table_n_star=df_cpr, exp_name='nstar1_periodical',
                             n_star_policy='daily',test_policy = 'periodical', period = 7, round_daily_test_cap=10000,
-                            T_lead = 1, I0=100, R0=2.5, R02=0.8, R03=1.5, tmax=200, t_start=80,t_end=150, sym_ratio=0.4)
+                            T_lead = 1, I0=100, R0=2.5, R02=0.8, R03=1.5, tmax=100, t_start=80,t_end=150, sym_ratio=0.4)
 
-#SIRsimulation(N, n_list, table_n_star=df_cpr,
-#                            n_star_policy='daily',test_policy = 'round', period = 7, round_daily_test_cap=N//20,
-#                            T_lead = 1, I0=100, R0=2.5, R02=0.8, R03=1.5, tmax=200, t_start=80,t_end=150, sym_ratio=0.4)
+result_nstar1_round = SIRsimulation(N, n_list, table_n_star=df_cpr, exp_name='nstar1_round',
+                            n_star_policy='daily',test_policy = 'round', period = 7, round_daily_test_cap=N//20,
+                            T_lead = 1, I0=100, R0=2.5, R02=0.8, R03=1.5, tmax=100, t_start=80,t_end=150, sym_ratio=0.4)
+
+result_nstar7_period = SIRsimulation(N, n_list, table_n_star=df_cpr, exp_name='nstar7_periodical',
+                            n_star_policy='weekly',test_policy = 'periodical', period = 7, round_daily_test_cap=10000,
+                            T_lead = 1, I0=100, R0=2.5, R02=0.8, R03=1.5, tmax=100, t_start=80,t_end=150, sym_ratio=0.4)
+
+result_nstar7_round = SIRsimulation(N, n_list, table_n_star=df_cpr, exp_name='nstar7_round',
+                            n_star_policy='weekly',test_policy = 'round', period = 7, round_daily_test_cap=N//20,
+                            T_lead = 1, I0=100, R0=2.5, R02=0.8, R03=1.5, tmax=100, t_start=80,t_end=150, sym_ratio=0.4)
+
+plt.figure(0)
+plt.plot(result_ind_round['S'],label='individual, round')
+plt.plot(result_nstar1_round['S'],label='n1, round')
+plt.plot(result_nstar7_round['S'],label='n7, round')
+plt.plot(result_ind_period['S'],label='individual, period')
+plt.plot(result_nstar1_period['S'],label='n1, period')
+plt.plot(result_nstar7_period['S'],label='n7, period')
+plt.legend()
+plt.title('S curve for all')
+
+plt.figure(1)
+plt.plot(result_ind_round['I'],label='individual, round')
+plt.plot(result_nstar1_round['I'],label='n1, round')
+plt.plot(result_nstar7_round['I'],label='n7, round')
+plt.plot(result_ind_period['I'],label='individual, period')
+plt.plot(result_nstar1_period['I'],label='n1, period')
+plt.plot(result_nstar7_period['I'],label='n7, period')
+plt.legend()
+plt.title('I curve for all')
+
+plt.figure(2)
+plt.plot(result_ind_round['number_of_total_tests'].cumsum(),label='individual, round')
+plt.plot(result_nstar1_round['number_of_total_tests'].cumsum(),label='n1, round')
+plt.plot(result_nstar7_round['number_of_total_tests'].cumsum(),label='n7, round')
+plt.plot(result_ind_period['number_of_total_tests'].cumsum(),label='individual, period')
+plt.plot(result_nstar1_period['number_of_total_tests'].cumsum(),label='n1, period')
+plt.plot(result_nstar7_period['number_of_total_tests'].cumsum(),label='n7, period')
+plt.legend()
+plt.title('test number total for all')
