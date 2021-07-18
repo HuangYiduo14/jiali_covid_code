@@ -288,20 +288,32 @@ def generate_cpr_se_curve(n_list, exp_number=1, N0=1000000, tmax=100):
     return cpr1_table_up,cpr1_table_down,se_table_up,se_table_down,cpr_table_up,cpr_table_down
 
 def plot_scatter(table,n_list):
-    for n in n_list:
-        plt.scatter(table['p'],table[str(n)],label=n)
+    for n in [3]:
+        plt.scatter(table['p'],table[n],label=n)
     plt.legend()
     plt.show()
 
-
 if __name__=='__main__':
-    n_list = [1, 2, 3, 4, 5, 10, 15]
-    cpr1_table_up,cpr1_table_down,se_table_up,se_table_down,cpr_table_up,cpr_table_down=generate_cpr_se_curve(n_list,50)
-    plot_scatter(cpr1_table_up,n_list)
+    p_random = 10**(-4+np.linspace(0,4,2000))
+    cpr_random = []
+    se_random = []
+    cpr1_random = []
+    N = 200000
+    n_list = [1, 2, 3, 4, 5,6,7,8,9,10, 15,20,25,30]
+    daily_test_cap = 1000
+    k=0
+    for p in p_random:
+        print('exp',k,'random p', p)
+        k+=1
+        I0 = int(p * N)
+        cpr_table1, se_table1, _, cpr1_table1 = SIRsimulation_get_curve(N, daily_test_cap, n_list, tmax=1, I0=I0)
+        cpr_random.append(cpr_table1[0])
+        se_random.append(se_table1[0])
+        cpr1_random.append(cpr1_table1[0])
+    cpr1_table = save_data(p_random, n_list, cpr1_random, 'cpr1')
+    se_table = save_data(p_random, n_list, se_random, 'se')
+    cpr_table = save_data(p_random, n_list, cpr_random, 'cpr')
 
-
-
-# test 2. assume random day
 # <<test of data initialization: PASSED
 # mcmc_result1 = mcmc_result.copy()
 # mcmc_result1['day'] = mcmc_result1['tg']
