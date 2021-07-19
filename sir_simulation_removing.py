@@ -32,6 +32,35 @@ def group_test(df_trajs, n, daily_test_cap, test_policy='periodical'):
     # the input df_trajs must have cols:
     #     need_test_today: bool indicate that if this person need to be tested
     #     log10vload and is_I: v load and indicate if this is infected
+    if n==1:
+        df_v_load = df_trajs.loc[
+            df_trajs['need_test_today'], ['log10vload', 'is_I']].copy()  # we select people that need test only
+        df_v_load['vload'] = 10 ** df_v_load['log10vload']
+        df_v_load.loc[df_v_load['vload'] <= 1 + EPS, 'vload'] = 0
+        df_v_load['number_of_test_group'] = 1
+        df_v_load['get_test'] = False
+        if test_policy == 'round':
+            if daily_test_cap<df_v_load.shape[0]:
+                tested_individual = np.random.choice(df_v_load.index.values, daily_test_cap,replace=False)
+                df_v_load.loc[tested_individual,'get_test'] = True
+            else:
+                df_v_load['get_test'] = True
+        else:
+            df_v_load['get_test'] = True
+        df_v_load['true_positive_ind'] = df_v_load['get_test'] & (df_v_load['vload'] > 10 ** detectable_load)
+        df_v_load['false_positive_ind'] = df_v_load['get_test']&(np.random.rand(df_v_load.shape[0])>=sp)&(~df_v_load['is_I'])
+        df_v_load['test_positive_ind'] = df_v_load['true_positive_ind'] | df_v_load['false_positive_ind']
+        TP = df_v_load['true_positive_ind'].sum()
+        TN = (df_v_load['get_test'] & (~df_v_load['is_I']) & (~df_v_load['test_positive_ind'])).sum()
+        FP = df_v_load['false_positive_ind'].sum()
+        FN = (df_v_load['get_test'] & df_v_load['is_I'] & (~df_v_load['test_positive_ind'])).sum()
+        assert TP + TN + FP + FN == df_v_load['get_test'].sum()
+        number_of_total_tests = df_v_load['get_test'].sum()
+        number_of_group_tests = df_v_load['get_test'].sum()
+        if test_policy == 'round':
+            assert number_of_total_tests <= daily_test_cap
+        return df_v_load, number_of_total_tests, number_of_group_tests, TP, TN, FP, FN
+
     df_v_load = df_trajs.loc[df_trajs['need_test_today'],['log10vload', 'is_I']].copy() # we select people that need test only
     N_test = df_v_load.shape[0] # number of people that need test
     group_name = np.arange(N_test)
@@ -46,13 +75,10 @@ def group_test(df_trajs, n, daily_test_cap, test_policy='periodical'):
                                                                                                axis=1)
     df_group_vl['true_positive_group'] = df_group_vl['vload'] > 10 ** detectable_load
     # here we add false positive cases
-    df_group_vl['false_positive_group'] = (np.random.rand(df_group_vl.shape[0])<=sp)&(~df_group_vl['true_positive_group'])
+    df_group_vl['false_positive_group'] = (np.random.rand(df_group_vl.shape[0])>=sp)&(~df_group_vl['true_positive_group'])
+    #import pdb; pdb.set_trace()
     df_group_vl['test_positive_group'] = df_group_vl['true_positive_group']|df_group_vl['false_positive_group']
-
-    if n > 1:
-        df_group_vl['number_of_test_group'] = 1 + n * df_group_vl['test_positive_group']
-    else:
-        df_group_vl['number_of_test_group'] = 1
+    df_group_vl['number_of_test_group'] = 1 + n * df_group_vl['test_positive_group']
     # only selected group can be tested
     if test_policy=='round':
         df_group_vl['cumsum_test'] = df_group_vl['number_of_test_group'].cumsum()
@@ -65,7 +91,7 @@ def group_test(df_trajs, n, daily_test_cap, test_policy='periodical'):
     df_v_load['true_positive_ind'] = df_v_load['get_test'] & df_v_load['test_positive_group'] & (
             df_v_load['vload'] > 10 ** detectable_load)  # test_positive_ind: if this person get tested and the result is positive
     df_v_load['false_positive_ind'] = df_v_load['get_test'] & df_v_load['test_positive_group'] & (
-            np.random.rand(df_v_load.shape[0])<=sp) & (~df_v_load['true_positive_ind'])
+                np.random.rand(df_v_load.shape[0])>=sp) & (~df_v_load['is_I'])
     df_v_load['test_positive_ind'] = df_v_load['true_positive_ind']|df_v_load['false_positive_ind']
     TP = df_v_load['true_positive_ind'].sum()
     TN = (df_v_load['get_test']&(~df_v_load['is_I'])&(~df_v_load['test_positive_ind'])).sum()
@@ -82,8 +108,8 @@ def group_test(df_trajs, n, daily_test_cap, test_policy='periodical'):
 
 # first we consider SIR model
 def SIRsimulation(N, table_n_star,
-                            n_star_policy='daily',test_policy = 'periodical', t_period = 7, period = 7, round_daily_test_cap=10000,fixed_n=3,
-                            T_lead = 1, I0=100, R0=2.5, R02=0.8, R03=1.5, tmax=365, t_start=80,t_end=150, sym_ratio=0.4, exp_name='default_exp'):
+                            n_star_policy='daily',test_policy = 'periodical', t_period = 7, period = 7, round_daily_test_cap=10000,fixed_n=1,
+                            T_lead = 1, I0=100, R0=1.5, R02=1.5, R03=1.5, tmax=365, t_start=80,t_end=150, sym_ratio=0.4, exp_name='default_exp'):
     '''
     run SIR simulation
     :param N: population size
@@ -120,7 +146,7 @@ def SIRsimulation(N, table_n_star,
     col_names = ['S', 'I', 'R', 'Q', 'SQ', 'total_tested_individual', 'positive_results', 'number_of_total_tests', 'n_star', 'number_of_group_tests','TP','TN','FP','FN']
     log_exp_table = []
     # -- define beta as a function of time --
-    gamma = 1. / 7
+    gamma = 1. / 14
     def beta(t):
         if t < t_start:
             return R0 * gamma
@@ -156,7 +182,7 @@ def SIRsimulation(N, table_n_star,
         trajs['round_test_needed'] = trajs['will_test']&(trajs['is_I']|trajs['is_R']|trajs['is_S']) # if is round test, we will have a column to indicate if tested or not
     else:
         trajs['period_test_in_days'] = big_M # if is period test, we need to see how many days until the test day
-
+    k = 0
     for t in range(tmax):
         print('day', t, '=' * 100)
         beta_t = beta(t)
@@ -166,7 +192,7 @@ def SIRsimulation(N, table_n_star,
         Q = trajs['is_Q'].sum()
         SQ = trajs['is_SQ'].sum()
         p_t = I / trajs.shape[0]
-        print('S:', S, ', I:', I, ', R:', R, ', Q:', Q, ', SQ:', SQ)
+        #print('S:', S, ', I:', I, ', R:', R, ', Q:', Q, ', SQ:', SQ,'R+Q+SQ:',R+Q+SQ)
         assert S + R + I+Q+SQ == trajs.shape[0]
         trajs = calculate_v_load(trajs) # calculate viral load
         # calculate n_star
@@ -205,12 +231,12 @@ def SIRsimulation(N, table_n_star,
         trajs.loc[new_infected.index, 'day'] = 0
         trajs.loc[new_infected.index, 'is_I'] = True
         trajs.loc[new_infected.index, 'is_S'] = False
-        # I,SQ-> Q
+        # I-> Q
         is_removed_from_test = trajs['day_until_remove'] == 0
         assert (1*trajs['is_I'] - 1*is_removed_from_test).min() >= 0
         trajs.loc[trajs['day_until_remove']<big_M,'day_until_remove'] -= 1
         trajs.loc[is_removed_from_test, 'is_I'] = False
-        trajs.loc[is_removed_from_test, 'is_SQ'] = False
+        #trajs.loc[is_removed_from_test, 'is_SQ'] = False
         trajs.loc[is_removed_from_test, 'is_Q'] = True
         # I -> SQ
         is_removed_symptom = trajs['can_be_sym']&(trajs['day'] > trajs['tinc'])&(trajs['is_I'])
@@ -226,13 +252,14 @@ def SIRsimulation(N, table_n_star,
 
         # continue of step 1, update after the test
         if test_policy == 'round':
-            print('people need to be test this round', trajs['round_test_needed'].sum())
+            #print('people need to be test this round', trajs['round_test_needed'].sum())
             trajs.loc[trajs['get_test'], 'round_test_needed'] = False
-            print('people need to be test this round 2:', trajs['round_test_needed'].sum())
+            #print('people need to be test this round 2:', trajs['round_test_needed'].sum())
             # if all round_test_needed = False, this round is over and update
             if trajs['round_test_needed'].sum() == 0:
                 trajs['round_test_needed'] = trajs['will_test'] & (trajs['is_I'] | trajs['is_R'] | trajs['is_S'])
-                print('old round ended, new round start: all from I')
+                print(k, 'old round ended, new round start')
+                k+=1
             else:
                 trajs['round_test_needed'] = trajs['round_test_needed'] & (
                             trajs['is_I'] | trajs['is_R'] | trajs['is_S'])
@@ -243,7 +270,7 @@ def SIRsimulation(N, table_n_star,
         trajs.loc[trajs['is_R'], 'day'] += 1
         trajs.loc[trajs['is_Q'],'day']+=1
         trajs.loc[trajs['is_SQ'], 'day'] += 1
-        print(S,I,R,Q,SQ,trajs['get_test'].sum(),trajs['true_positive_ind'].sum(),number_of_total_tests,n_star,number_of_group_tests,TP,TN,FP,FN,file=file_log)
+        #print(S,I,R,Q,SQ,trajs['get_test'].sum(),trajs['true_positive_ind'].sum(),number_of_total_tests,n_star,number_of_group_tests,TP,TN,FP,FN,file=file_log)
         log_exp_table.append([S,I,R,Q,SQ,trajs['get_test'].sum(),trajs['true_positive_ind'].sum(),number_of_total_tests,n_star,number_of_group_tests,TP,TN,FP,FN])
         file_log.flush()
     file_log.close()
@@ -271,14 +298,23 @@ print('>> n_star curve generated','**'*100)
 
 
 N=100000
-I0 = 100
-capcity = N//20
-tmax=100
+I0 = int(N//100)
+capcity = int(N//100)
+tmax=365
 # pay attention to default variables
 
 result_ind_period = SIRsimulation(N, table_n_star=df_cpr, exp_name='individual_periodical',
                             n_star_policy='fixed',test_policy = 'periodical', I0=I0,tmax=tmax)
 
+result_ind_round = SIRsimulation(N, table_n_star=df_cpr, exp_name='individual_round',
+                            n_star_policy='fixed',test_policy = 'round', I0=I0, round_daily_test_cap=capcity,tmax=tmax)
+
+result_nstar1_period = SIRsimulation(N, table_n_star=df_cpr, exp_name='nstar1_periodical',
+                            n_star_policy='daily',test_policy = 'periodical',I0=I0,tmax=tmax)
+
+result_nstar1_round = SIRsimulation(N, table_n_star=df_cpr, exp_name='nstar1_round',
+                            n_star_policy='daily',test_policy = 'round', I0=I0,round_daily_test_cap=capcity,tmax=tmax)
+"""
 result_ind_round = SIRsimulation(N, table_n_star=df_cpr, exp_name='individual_round',
                             n_star_policy='fixed',test_policy = 'round', I0=I0, round_daily_test_cap=capcity,tmax=tmax)
 
@@ -295,4 +331,4 @@ result_nstar7_round = SIRsimulation(N, table_n_star=df_cpr, exp_name='nstar7_rou
                             n_star_policy='period',test_policy = 'round', I0=I0,round_daily_test_cap=capcity,tmax=tmax)
 
 
-
+"""
