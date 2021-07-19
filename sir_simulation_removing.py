@@ -261,7 +261,7 @@ for i, n in enumerate(n_list):
     else:
         se_vect = df_se[str(n)+'_lws'].values
         p_vect = df_se['p'].values
-        cpr_matrix[:,i] = 1. / se_vect / df_se['1_lws'].values / p_vect * (1. / n + se_vect - se_vect * (1 - p_vect) ** n)
+        cpr_matrix[:,i] = 1. / se_vect / df_se['1_lws'].values / p_vect * (1. / n + se_vect - (se_vect+sp-1) * (1 - p_vect) ** n)
 df_cpr = pd.DataFrame(cpr_matrix,columns=n_list)
 df_cpr['p'] = df_se['p']
 df_cpr.set_index('p',inplace=True)
