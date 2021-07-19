@@ -3,8 +3,10 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 EPS = 1e-12
-detectable_load = 2
-n_list = [1, 2, 3, 4, 5,6,7,8,9,10, 15,20,25,30]
+detectable_load = 3
+#detectable_load = 5
+#n_list = [1]
+n_list = [1, 2, 3, 4, 5, 6 ,7 ,8, 9,10, 15,20,25,30]
 
 file_name = 'used_pars_swab_1.csv'
 mcmc_result = pd.read_csv(file_name)
@@ -311,9 +313,9 @@ if __name__=='__main__':
         cpr_random.append(cpr_table1[0])
         se_random.append(se_table1[0])
         cpr1_random.append(cpr1_table1[0])
-    cpr1_table = save_data(p_random, n_list, cpr1_random, 'cpr1')
-    se_table = save_data(p_random, n_list, se_random, 'se')
-    cpr_table = save_data(p_random, n_list, cpr_random, 'cpr')
+    cpr1_table = save_data(p_random, n_list, cpr1_random, 'anti_cpr1')
+    se_table = save_data(p_random, n_list, se_random, 'anti_se')
+    cpr_table = save_data(p_random, n_list, cpr_random, 'anti_cpr')
 
 # <<test of data initialization: PASSED
 # mcmc_result1 = mcmc_result.copy()
