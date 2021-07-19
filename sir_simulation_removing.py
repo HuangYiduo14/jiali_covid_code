@@ -100,8 +100,6 @@ def SIRsimulation(N, table_n_star,
     file_log = open('exp0_'+exp_name+'.txt','w')
     print(exp_name, ':', file=file_log)
     print(sys.argv[1:],file=file_log)
-    file_log.close()
-    file_log = open('exp0_'+exp_name + '.txt', 'a')
     print('='*100,file=file_log)
     file_log.flush()
     print('S, I, R, Q, SQ, total_tested_individual, positive_results, number_of_total_tests, n_star, number_of_group_tests', file=file_log)
@@ -230,6 +228,7 @@ def SIRsimulation(N, table_n_star,
         trajs.loc[trajs['is_R'], 'day'] += 1
         trajs.loc[trajs['is_Q'],'day']+=1
         trajs.loc[trajs['is_SQ'], 'day'] += 1
+        print(S,I,R,Q,SQ,trajs['get_test'].sum(),trajs['test_positive_ind'].sum(),number_of_total_tests,n_star,number_of_group_tests,file=file_log)
         log_exp_table.append([S,I,R,Q,SQ,trajs['get_test'].sum(),trajs['test_positive_ind'].sum(),number_of_total_tests,n_star,number_of_group_tests])
         file_log.flush()
     file_log.close()
