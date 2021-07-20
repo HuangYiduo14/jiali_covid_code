@@ -337,8 +337,6 @@ if __name__=='__main__':
 # mcmc_result1['day'] = mcmc_result1['tinc']+mcmc_result1['tw']
 # mcmc_result1 = calculate_v_load(mcmc_result1)
 # print('valid min and max',mcmc_result1.loc[mcmc_result1['is_tg_valid'],'log10vload'].min(),mcmc_result1.loc[mcmc_result1['is_tg_valid'],'log10vload'].max())
-
-
 # def simulate_se_sp(p,n_list,asym_rate = 0.5,pop=10000000,L=5):
 #     NI = round(pop*p)
 #     NI_asym = round(NI*asym_rate)

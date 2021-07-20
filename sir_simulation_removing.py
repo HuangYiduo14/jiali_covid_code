@@ -22,7 +22,7 @@ df_se = pd.read_csv('anti_se_data.csv')
 #n_list = n_list = [1, 2, 3, 4, 5, 6 ,7 ,8, 9, 10, 15, 20, 25, 30]
 #df_se = pd.read_csv('pcr_se_data.csv')
 ##########################################################
-# change detectable load and n_list here: end
+# change detectable load and n_list here: end #
 #########################################################
 df_se.sort_values(by='p',inplace=True)
 mcmc_result = get_mcmc_result()
