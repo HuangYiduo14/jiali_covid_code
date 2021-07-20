@@ -1,17 +1,33 @@
-from our_simulation import mcmc_result, calculate_v_load, EPS, n_list, detectable_load
+from our_simulation import get_mcmc_result, calculate_v_load
 import pandas as pd
 import numpy as np
 import statsmodels.api as sm
 import sys
 import matplotlib.pyplot as plt
 lowess = sm.nonparametric.lowess
-color_table = {1:'b', 2:'r', 3:'g', 4:'c', 30:'m', 10:'y'}
-df_se = pd.read_csv('se_data.csv')
-#df_cpr = pd.read_csv('cpr1_data.csv')
-df_se.sort_values(by='p',inplace=True)
+
 #df_cpr.sort_values(by='p',inplace=True)
 big_M=999
 sp = 0.986
+EPS = 1e-12
+##########################################################
+# change detectable load and n_list here
+#########################################################
+# set 1: antigen
+detectable_load = 5
+n_list = [1]
+df_se = pd.read_csv('anti_se_data.csv')
+# set 2: pcr
+#detectable_load = 2
+#n_list = n_list = [1, 2, 3, 4, 5, 6 ,7 ,8, 9, 10, 15, 20, 25, 30]
+#df_se = pd.read_csv('pcr_se_data.csv')
+##########################################################
+# change detectable load and n_list here: end
+#########################################################
+df_se.sort_values(by='p',inplace=True)
+mcmc_result = get_mcmc_result()
+color_table = {1:'b', 2:'r', 3:'g', 4:'c', 30:'m', 10:'y'}
+
 
 def lowess_data(n_list,df_se):
     # fit curve se
@@ -19,6 +35,7 @@ def lowess_data(n_list,df_se):
         x = df_se['p'].values
         y = df_se[str(n)].values
         z = lowess(y,x,return_sorted=False,frac=1./10)
+        z[z>1.] = 1.
         df_se[str(n)+'_lws'] = z
         #if n in list(color_table.keys()):
             # plt.scatter(x,y,alpha=0.4,color=color_table[n])
@@ -296,7 +313,9 @@ df_cpr = pd.DataFrame(cpr_matrix,columns=n_list)
 df_cpr['p'] = df_se['p']
 df_cpr.set_index('p',inplace=True)
 df_cpr['n_star'] = df_cpr.idxmin(axis=1)
-# df_cpr['n_star'].plot()
+
+# here we have all cpr data
+# df_cpr['n_star'].plot() # draw n star plot here <<<<<
 print('>> n_star curve generated','**'*100)
 
 

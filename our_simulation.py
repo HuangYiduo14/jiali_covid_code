@@ -2,38 +2,36 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-EPS = 1e-12
-detectable_load = 3
-#detectable_load = 5
-#n_list = [1]
-n_list = [1, 2, 3, 4, 5, 6 ,7 ,8, 9,10, 15,20,25,30]
-
-file_name = 'used_pars_swab_1.csv'
-mcmc_result = pd.read_csv(file_name)
-mcmc_result = mcmc_result.dropna()
-mcmc_result.reset_index(inplace=True, drop=True)
-# t00: first time greater than 0,
-# tpg: tp+tg,
-# t01: last time greater than 0，
-# these 3 params determines one trajectory
-mcmc_result['tpg'] = mcmc_result['tp'] + mcmc_result['tg']
-mcmc_result['is_tg_valid'] = (mcmc_result['vp'] >= detectable_load) & \
-                             ((mcmc_result['vp'] - detectable_load) / mcmc_result['tp'] > detectable_load / mcmc_result[
-                                 'tg'])
-is_tg_valid = mcmc_result['is_tg_valid']
-# case 1: tg is valid
-mcmc_result.loc[is_tg_valid, 't00'] = mcmc_result.loc[is_tg_valid, 'tg'] - \
-                                      mcmc_result.loc[is_tg_valid, 'tp'] / (
-                                              mcmc_result.loc[is_tg_valid, 'vp'] - detectable_load) * detectable_load
-mcmc_result.loc[is_tg_valid, 't01'] = mcmc_result.loc[is_tg_valid, 'tw'] + mcmc_result.loc[is_tg_valid, 'tinc'] \
-                                      + detectable_load * (mcmc_result.loc[is_tg_valid, 'tw'] + mcmc_result.loc[
-    is_tg_valid, 'tinc']
-                                                           - mcmc_result.loc[is_tg_valid, 'tpg']) / (
-                                              mcmc_result.loc[is_tg_valid, 'vp'] - detectable_load)
-# case 2: tg is not valid
-mcmc_result.loc[~is_tg_valid, 't00'] = 0
-mcmc_result.loc[~is_tg_valid, 't01'] = mcmc_result.loc[~is_tg_valid, 'tw'] + mcmc_result.loc[~is_tg_valid, 'tinc']
-
+def get_mcmc_result():
+    detectable_load0 = 2
+    file_name = 'used_pars_swab_1.csv'
+    mcmc_result = pd.read_csv(file_name)
+    mcmc_result = mcmc_result.dropna()
+    mcmc_result.reset_index(inplace=True, drop=True)
+    # t00: first time greater than 0,
+    # tpg: tp+tg,
+    # t01: last time greater than 0，
+    # these 3 params determines one trajectory
+    mcmc_result['tpg'] = mcmc_result['tp'] + mcmc_result['tg']
+    mcmc_result['is_tg_valid'] = (mcmc_result['vp'] >= detectable_load0) & \
+                                 ((mcmc_result['vp'] - detectable_load0) / mcmc_result['tp'] > detectable_load0 /
+                                  mcmc_result[
+                                      'tg'])
+    is_tg_valid = mcmc_result['is_tg_valid']
+    # case 1: tg is valid
+    mcmc_result.loc[is_tg_valid, 't00'] = mcmc_result.loc[is_tg_valid, 'tg'] - \
+                                          mcmc_result.loc[is_tg_valid, 'tp'] / (
+                                                  mcmc_result.loc[
+                                                      is_tg_valid, 'vp'] - detectable_load0) * detectable_load0
+    mcmc_result.loc[is_tg_valid, 't01'] = mcmc_result.loc[is_tg_valid, 'tw'] + mcmc_result.loc[is_tg_valid, 'tinc'] \
+                                          + detectable_load0 * (mcmc_result.loc[is_tg_valid, 'tw'] + mcmc_result.loc[
+        is_tg_valid, 'tinc']
+                                                               - mcmc_result.loc[is_tg_valid, 'tpg']) / (
+                                                  mcmc_result.loc[is_tg_valid, 'vp'] - detectable_load0)
+    # case 2: tg is not valid
+    mcmc_result.loc[~is_tg_valid, 't00'] = 0
+    mcmc_result.loc[~is_tg_valid, 't01'] = mcmc_result.loc[~is_tg_valid, 'tw'] + mcmc_result.loc[~is_tg_valid, 'tinc']
+    return mcmc_result
 
 def CPR_group_test(df_trajs, n, daily_test_cap, se_i=0.9):
     # do group test for each group with given n and curve
@@ -297,6 +295,14 @@ def plot_scatter(table,n_list):
     plt.legend()
     plt.show()
 
+
+EPS = 1e-12
+detectable_load = 5
+n_list = [1]
+#detectable_load = 2
+#n_list = n_list = [1, 2, 3, 4, 5, 6 ,7 ,8, 9, 10, 15, 20, 25, 30]
+mcmc_result = get_mcmc_result()
+
 if __name__=='__main__':
     p_random = 10**(-4+np.linspace(0,4,2000))
     cpr_random = []
@@ -313,9 +319,9 @@ if __name__=='__main__':
         cpr_random.append(cpr_table1[0])
         se_random.append(se_table1[0])
         cpr1_random.append(cpr1_table1[0])
-    cpr1_table = save_data(p_random, n_list, cpr1_random, 'anti_cpr1')
+    #cpr1_table = save_data(p_random, n_list, cpr1_random, 'pcr_cpr1')
     se_table = save_data(p_random, n_list, se_random, 'anti_se')
-    cpr_table = save_data(p_random, n_list, cpr_random, 'anti_cpr')
+    #cpr_table = save_data(p_random, n_list, cpr_random, 'anti_cpr')
 
 # <<test of data initialization: PASSED
 # mcmc_result1 = mcmc_result.copy()
