@@ -107,14 +107,16 @@ def group_test(df_trajs, n, daily_test_cap, test_policy='periodical'):
     return df_v_load, number_of_total_tests, number_of_group_tests, TP,TN,FP,FN
 
 # first we consider SIR model
-def SIRsimulation(N, table_n_star,
+def SIRsimulation(N, table_n_star,external_infection_rate=0.0001,
                             n_star_policy='daily',test_policy = 'periodical', t_period = 7, period = 7, round_daily_test_cap=10000,fixed_n=1,
                             T_lead = 1, I0=100, R0=1.5, R02=1.5, R03=1.5, tmax=365, t_start=80,t_end=150, sym_ratio=0.4, exp_name='default_exp'):
+    # << here external_rate HYD
     '''
     run SIR simulation
     :param N: population size
     :param n_list: list of n that we want in our experiments
     :param table_n_star: a table recording n star and p, must have columns ['n_star'] and index is 'p'
+    :param external_infection_rate: external infection rate
 
     :param n_star_policy: how to get optimal {'daily','period','fixed'}
     :param test_policy: how to test people {'periodical','round'}
@@ -224,7 +226,8 @@ def SIRsimulation(N, table_n_star,
         trajs.loc[will_be_Q_in_T_lead, 'day_until_remove'] = T_lead
         # -- update according to SIR --
         # S -> I
-        neg_dS = round(beta_t * S * I / N)  # calculate new infections (-dS)
+        external_number_today = int(N*external_infection_rate) #HYD: external rate
+        neg_dS = round(beta_t * S * I / N)+external_number_today   # calculate new infections (-dS) # HYD: external rate
         if S - neg_dS < 0:
             neg_dS = S
         new_infected = trajs.loc[trajs['is_S']].sample(int(neg_dS), replace=False)

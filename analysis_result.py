@@ -1,6 +1,12 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 
+antigen_ind = pd.read_csv('/Users/huangyiduo/Documents/covid_jialipaper/covid_testing-master/7day/exp_antigen_individual_periodical.csv')
+exp_nstad = pd.read_csv('/Users/huangyiduo/Documents/covid_jialipaper/covid_testing-master/7day/exp_nstar1_periodical.csv')
+exp_ind = pd.read_csv('/Users/huangyiduo/Documents/covid_jialipaper/covid_testing-master/7day/exp_individual_periodical.csv')
+exp_no_test = pd.read_csv('/Users/huangyiduo/Documents/covid_jialipaper/covid_testing-master/7day/exp_no_testing.csv')
+
+"""
 result_ind_period = pd.read_csv('exp_individual_periodical.csv')
 result_ind_round = pd.read_csv('exp_individual_round.csv')
 result_nstar1_period = pd.read_csv('exp_nstar1_periodical.csv')
@@ -38,3 +44,4 @@ plot_curve('FP',True,4,'FP')
 plot_curve('TN',True,5,'TN')
 plot_curve('FN',True,6,'FN')
 plot_curve('FP',False,7,'FP(t)')
+"""
