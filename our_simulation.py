@@ -3,7 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 def get_mcmc_result():
-    detectable_load0 = 2
+    detectable_load0 = 3
     file_name = 'used_pars_swab_1.csv'
     mcmc_result = pd.read_csv(file_name)
     mcmc_result = mcmc_result.dropna()
