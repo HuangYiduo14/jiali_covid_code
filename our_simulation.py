@@ -51,6 +51,7 @@ def CPR_group_test(df_trajs, n, daily_test_cap, se_i=0.9):
     df_group_vl = df_v_load.groupby('group_name').agg({'vload': 'mean', 'is_I': 'sum'}).rename({'is_I': 'num_I_group'},
                                                                                                axis=1)
     df_group_vl['test_positive_group'] = df_group_vl['vload'] > 10 ** detectable_load
+    print(detectable_load)
     if n > 1:
         df_group_vl['number_of_test_group'] = 1 + n * df_group_vl['test_positive_group']
     else:
@@ -299,8 +300,8 @@ def plot_scatter(table,n_list):
 EPS = 1e-12
 detectable_load = 5
 n_list = [1]
-#detectable_load = 2
-#n_list = n_list = [1, 2, 3, 4, 5, 6 ,7 ,8, 9, 10, 15, 20, 25, 30]
+#detectable_load = 3
+#n_list = [1, 2, 3, 4, 5, 6 ,7 ,8, 9, 10, 15, 20, 25, 30]
 mcmc_result = get_mcmc_result()
 
 if __name__=='__main__':
@@ -320,7 +321,7 @@ if __name__=='__main__':
         se_random.append(se_table1[0])
         cpr1_random.append(cpr1_table1[0])
     #cpr1_table = save_data(p_random, n_list, cpr1_random, 'pcr_cpr1')
-    se_table = save_data(p_random, n_list, se_random, 'anti_se')
+    se_table = save_data(p_random, n_list, se_random, 'anti3_se')
     #cpr_table = save_data(p_random, n_list, cpr_random, 'anti_cpr')
 
 # <<test of data initialization: PASSED
