@@ -21,11 +21,13 @@ EPS = 1e-12
 # set 2: pcr
 detectable_load = 3
 n_list  = [1, 2, 3, 4, 5, 6 ,7 ,8, 9, 10, 15, 20, 25, 30]
-df_se = pd.read_csv('se_pcr_3_data_1.csv')
+df_se = pd.read_csv('pcr_se_data.csv')
+df_all_se = pd.read_csv('pcr_se_all_data.csv')
 ##########################################################
 # change detectable load and n_list here: end #
 #########################################################
 df_se.sort_values(by='p',inplace=True)
+df_all_se.sort_values(by='p',inplace=True)
 mcmc_result = get_mcmc_result()
 color_table = {1:'b', 2:'r', 3:'g', 4:'c', 30:'m', 10:'y'}
 
@@ -302,7 +304,11 @@ def SIRsimulation(N, table_n_star,external_infection_rate=1/20000,
     df.to_csv('exp_'+exp_name+'.csv')
     df['I_all'] = df['I']+df['Q']+df['SQ']+df['R']
     return df
+
+
+# HYD: we changed the cpr calculation here
 df_se = lowess_data(n_list,df_se)
+df_all_se = lowess_data(n_list, df_all_se)
 # df_se.to_csv('se_data_lws.csv',index=False)
 # df_se = pd.read_csv('se_data_lws.csv').drop('Unnamed: 0',axis=1)
 n_test = df_se.shape[0]
@@ -312,15 +318,16 @@ for i, n in enumerate(n_list):
         cpr_matrix[:,0] = 1./df_se[str(n)+'_lws'].values/df_se['p'].values
     else:
         se_vect = df_se[str(n)+'_lws'].values
+        se_all_vect = df_all_se[str(n)+'_lws'].values
         p_vect = df_se['p'].values
-        cpr_matrix[:,i] = 1. / se_vect / df_se['1_lws'].values / p_vect * (1. / n + se_vect - (se_vect+sp-1) * (1 - p_vect) ** n)
+        cpr_matrix[:,i] = 1. / se_all_vect / p_vect * (1. / n + se_vect - (se_vect+sp-1) * (1 - p_vect) ** n)
 df_cpr = pd.DataFrame(cpr_matrix,columns=n_list)
 df_cpr['p'] = df_se['p']
 df_cpr.set_index('p',inplace=True)
 df_cpr['n_star'] = df_cpr.idxmin(axis=1)
 
 # here we have all cpr data
-# df_cpr['n_star'].plot() # draw n star plot here <<<<<
+df_cpr['n_star'].plot() # draw n star plot here <<<<<
 print('>> n_star curve generated','**'*100)
 
 

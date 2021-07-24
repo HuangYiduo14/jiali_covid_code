@@ -51,15 +51,13 @@ def CPR_group_test(df_trajs, n, daily_test_cap, se_i=0.9):
     df_group_vl = df_v_load.groupby('group_name').agg({'vload': 'mean', 'is_I': 'sum'}).rename({'is_I': 'num_I_group'},
                                                                                                axis=1)
     df_group_vl['test_positive_group'] = df_group_vl['vload'] > 10 ** detectable_load
-    #print(detectable_load)
+    print(detectable_load)
     if n > 1:
         df_group_vl['number_of_test_group'] = 1 + n * df_group_vl['test_positive_group']
     else:
         df_group_vl['number_of_test_group'] = 1
-    # only selected group can be tested
-    df_group_vl['cumsum_test'] = df_group_vl['number_of_test_group'].cumsum()
-    df_group_vl['get_test'] = df_group_vl['cumsum_test'] < daily_test_cap
-    df_group_vl.drop('cumsum_test', axis=1, inplace=True)
+
+    df_group_vl['get_test'] = True
     df_group_vl.reset_index(inplace=True)  # make group number an col instead of index
     df_v_load = df_v_load.join(df_group_vl, on='group_name', how='left', rsuffix='_group')  # join table on group names
     df_v_load['test_positive_ind'] = df_v_load['get_test'] & df_v_load['test_positive_group'] & (
@@ -67,6 +65,7 @@ def CPR_group_test(df_trajs, n, daily_test_cap, se_i=0.9):
                 'vload'] > 10 ** detectable_load)  # test_positive_ind: if this person get tested and the result is positive
     total_tested_infected = (df_v_load['is_I'] & df_v_load['get_test']).sum()
     total_patient_found = df_v_load['test_positive_ind'].sum()
+
     if total_tested_infected == 0:
         return None,None,None,None,None
     se_all = total_patient_found / total_tested_infected
@@ -74,15 +73,9 @@ def CPR_group_test(df_trajs, n, daily_test_cap, se_i=0.9):
     # note that cpr and se are not limited by the capacity, here we calculate over all population
     total_infected_group = (df_group_vl['num_I_group'] > 0).sum()
     total_test_out_group = df_group_vl['test_positive_group'].sum()
-    # import pdb;pdb.set_trace()
-    if df_group_vl.loc[df_group_vl['test_positive_group'], 'num_I_group'].min() == 0:
-        print('possible error: positive for non I')
-        import pdb
-        pdb.set_trace()
     # question: some R has large VL
     if total_infected_group < EPS:
         se = 1
-        assert df_v_load['is_I'].sum()<EPS
     else:
         se = total_test_out_group / total_infected_group
     total_patient_found_theory = (df_v_load['test_positive_group'] & (df_v_load['vload'] > 10 ** detectable_load)).sum()
@@ -262,44 +255,3 @@ if __name__=='__main__':
 # mcmc_result1['day'] = mcmc_result1['tinc']+mcmc_result1['tw']
 # mcmc_result1 = calculate_v_load(mcmc_result1)
 # print('valid min and max',mcmc_result1.loc[mcmc_result1['is_tg_valid'],'log10vload'].min(),mcmc_result1.loc[mcmc_result1['is_tg_valid'],'log10vload'].max())
-# def simulate_se_sp(p,n_list,asym_rate = 0.5,pop=10000000,L=5):
-#     NI = round(pop*p)
-#     NI_asym = round(NI*asym_rate)
-#     NI_sym = NI - NI_asym
-#     NS = pop - NI
-#
-#     v_load = np.zeros(pop) # v load for each person
-#     v_params = sample_trajectories(NI)
-#
-#     np.random.shuffle(v_load)
-#
-#     p_true_positive_list = []
-#     for n in n_list:
-#         n_groups = len(v_load)//n
-#         if n==1:
-#             detected_pop = np.sum(v_load>L)
-#             n_total_patient_asym = np.sum(v_load > EPS)
-#             p_true_positive = detected_pop/n_total_patient_asym
-#             p_true_positive_list.append(p_true_positive)
-#             continue
-#         # vectorize to speed up
-#         v_load_without_sym_reshaped = np.reshape(v_load[:n_groups*n],(n_groups,n))
-#         v_group_mean = np.log10(np.mean(10.**v_load_without_sym_reshaped, axis=1))
-#         detected_group = np.count_nonzero(v_group_mean>L)
-#         infected_group = np.count_nonzero(v_group_mean>EPS)
-#         p_true_positive = detected_group / infected_group
-#         p_true_positive_list.append(p_true_positive)
-#     return p_true_positive_list
-# result = []
-# #p_list = 10**(-2+0.02*np.arange(1,100))
-# p_list = .02*np.arange(1,10)
-# n_list = np.arange(1,10)
-# for p in p_list:
-#     p_true_pt = simulate_se_sp(p,n_list,asym_rate = 0.65,pop=1000000,L=3)
-#     print(p, p_true_pt)
-#     result.append([p]+p_true_pt)
-# result = pd.DataFrame(result,columns=['p']+n_list.tolist())
-# result.to_csv('result_test_1Mpop.csv')
-# #result.set_index('p',inplace=True)
-# result.plot(x='p',y=n_list)
-# plt.xscale('log')
