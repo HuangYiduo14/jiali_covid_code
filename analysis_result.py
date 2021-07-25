@@ -1,10 +1,15 @@
 import pandas as pd
 import matplotlib.pyplot as plt
+import numpy as np
 
-antigen_ind = pd.read_csv('/Users/huangyiduo/Documents/covid_jialipaper/covid_testing-master/7day/exp_antigen_individual_periodical.csv')
 exp_nstad = pd.read_csv('/Users/huangyiduo/Documents/covid_jialipaper/covid_testing-master/7day/exp_nstar1_periodical.csv')
-exp_ind = pd.read_csv('/Users/huangyiduo/Documents/covid_jialipaper/covid_testing-master/7day/exp_individual_periodical.csv')
-exp_no_test = pd.read_csv('/Users/huangyiduo/Documents/covid_jialipaper/covid_testing-master/7day/exp_no_testing.csv')
+
+
+
+
+
+
+
 
 """
 result_ind_period = pd.read_csv('exp_individual_periodical.csv')
