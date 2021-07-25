@@ -42,13 +42,15 @@ def calculate_cost(df_result, is_antigen=False):
     if is_antigen:
         return {'rna_extr_consumables': 0., 'rt_pcr_consumables': 0.,
                 'setup': 0., 'rna_extr_labor': 0.,
-                'rt_pcr_labor': 0., 'reporting_labor': reporting_labor,
-                'labor_cost': reporting_labor,
+                'rt_pcr_labor': 0., 'reporting_labor': 0,
+                'labor_cost': 0,
+                'Reagents and Consumables':antigen_per_test*total_tests.sum()+reporting_labor,
                 'total_cost': antigen_per_test*total_tests.sum()+reporting_labor
                 }
     else:
         return {'rna_extr_consumables':rna_extr_consumables,'rt_pcr_consumables':rt_pcr_consumables,
                 'setup':setup_labor,'rna_extr_labor':rna_extra_labor,
+                'Reagents and Consumables':rna_extr_consumables+rt_pcr_consumables,
                 'rt_pcr_labor':rt_pcr_labor,'reporting_labor':reporting_labor,
                 'labor_cost':setup_labor+rna_extra_labor+rt_pcr_labor+reporting_labor,
                 'total_cost':setup_labor+rna_extra_labor+rt_pcr_labor+reporting_labor+rna_extr_consumables+rt_pcr_consumables

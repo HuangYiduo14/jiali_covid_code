@@ -93,6 +93,7 @@ file_names = ['exp_nstar1_periodical.csv',
               'exp_individual_periodical.csv',
               'exp_antigen_individual_periodical.csv',
               'exp_no_testing.csv']
+
 data_list = [pd.read_csv(name) for name in file_names]
 for df in data_list:
     df['total_I'] = df['I'] + df['Q'] + df['SQ'] + df['R']
