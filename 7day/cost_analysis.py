@@ -40,27 +40,27 @@ def calculate_cost(df_result, is_antigen=False):
     rt_pcr_labor = VOT*rt_pcr_labor_per_pcr*total_tests.sum()
     reporting_labor = VOT* reporting_labor_per_person *tested_persons.sum()
     if is_antigen:
-        return {'rna_extr_consumables': 0., 'rt_pcr_consumables': 0.,
-                'setup': 0., 'rna_extr_labor': 0.,
-                'rt_pcr_labor': 0., 'reporting_labor': 0,
-                'labor_cost': 0,
+        return {'RNA extraction consumables': 0., 'RT-PCR consumables': 0.,'Antigen test cost': antigen_per_test*total_tests.sum()+reporting_labor,
                 'Reagents and Consumables':antigen_per_test*total_tests.sum()+reporting_labor,
-                'total_cost': antigen_per_test*total_tests.sum()+reporting_labor
+                'Pool test setup labor': 0., 'RNA extraction labor': 0.,
+                'RT-PCR labor': 0., 'Reporting labor': 0,
+                'Total labor cost': 0,
+                'Total cost': antigen_per_test*total_tests.sum()+reporting_labor
                 }
     else:
-        return {'rna_extr_consumables':rna_extr_consumables,'rt_pcr_consumables':rt_pcr_consumables,
-                'setup':setup_labor,'rna_extr_labor':rna_extra_labor,
-                'Reagents and Consumables':rna_extr_consumables+rt_pcr_consumables,
-                'rt_pcr_labor':rt_pcr_labor,'reporting_labor':reporting_labor,
-                'labor_cost':setup_labor+rna_extra_labor+rt_pcr_labor+reporting_labor,
-                'total_cost':setup_labor+rna_extra_labor+rt_pcr_labor+reporting_labor+rna_extr_consumables+rt_pcr_consumables
+        return {'RNA extraction consumables':rna_extr_consumables,'RT-PCR consumables':rt_pcr_consumables, 'Antigen test cost':0,
+                'Reagents and Consumables': rna_extr_consumables+rt_pcr_consumables,
+                'Pool test setup labor':setup_labor,'RNA extraction labor':rna_extra_labor,
+                'RT-PCR labor':rt_pcr_labor,'Reporting labor':reporting_labor,
+                'Total labor cost':setup_labor+rna_extra_labor+rt_pcr_labor+reporting_labor,
+                'Total cost':setup_labor+rna_extra_labor+rt_pcr_labor+reporting_labor+rna_extr_consumables+rt_pcr_consumables
                 }
 
 def calculate_total(df):
     return (df['I']+df['R']+df['Q']+df['SQ']).max()
 # calculate reduction in peak
 col_names = ['Flexiable PCR','Individual PCR','Antigen']
-row_names = ['reduction in peak','reduction in total']
+row_names = ['Reduction in peak','Reduction in total']
 reduction_peak = [
     (no_test['I'].max()-nstar['I'].max())/no_test['I'].max(),
     (no_test['I'].max()-indi['I'].max())/no_test['I'].max(),
@@ -76,6 +76,18 @@ df_reduction = pd.DataFrame([reduction_peak,reduction_total],columns=col_names,i
 df_cost = pd.DataFrame({'Flexiable PCR':calculate_cost(nstar),'Individual PCR':calculate_cost(indi), 'Antigen': calculate_cost(anti,is_antigen=True)})
 
 df_cost = df_cost.append(df_reduction)
-df_cost.loc['efficiency_in_peak'] = (df_cost.loc['reduction in peak']*100)/(df_cost.loc['total_cost']/1000000)
-df_cost.loc['efficiency_in_total'] = (df_cost.loc['reduction in total']*100)/(df_cost.loc['total_cost']/100000)
+df_cost.loc['Efficiency in peak (percentage per million $)'] = (df_cost.loc['Reduction in peak']*100)/(df_cost.loc['Total cost']/1000000)
+df_cost.loc['Efficiency in total (percentage per million $)'] = (df_cost.loc['Reduction in total']*100)/(df_cost.loc['Total cost']/1000000)
+df_cost['Cost for each test']=None
+df_cost['Cost for each individual'] = None
+df_cost.loc['RNA extraction consumables','Cost for each test'] = 9.18
+df_cost.loc['RT-PCR consumables','Cost for each test'] = 5.43
+df_cost.loc['Antigen test cost','Cost for each test'] = 10
+
+
+df_cost.loc['Pool test setup labor','Cost for each individual'] = (24/3600*36.5)
+df_cost.loc['Reporting labor','Cost for each individual'] = 1.5/60.*36.5
+df_cost.loc['RNA extraction labor','Cost for each test'] = 1./14*36.5
+df_cost.loc['RT-PCR labor','Cost for each test'] = 1./28*0.5*36.5
+
 df_cost.to_csv('cost analysis.csv')
