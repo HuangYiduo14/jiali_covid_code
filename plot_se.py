@@ -7,7 +7,9 @@ import statsmodels.api as sm
 import matplotlib.pyplot as plt
 sp = 0.986
 lowess = sm.nonparametric.lowess
-
+plt.rcParams.update({'font.size':13})
+plt.rcParams.update({'axes.labelpad':9})
+plt.rc('font', family = 'Times New Roman')
 def lowess_data(n_list,df_se):
     # fit curve se
     for n in n_list:
@@ -55,32 +57,32 @@ for n in n_list:
     ax1.plot(df_se['p'],df_se[str(n)+'_lws'],label='PCR n='+str(n))
 #ax1.legend(ncol=1,bbox_to_anchor=(1,1),loc='upper left')
 ax1.set_xscale('log')
-ax1.set_title('Se for poll')
+ax1.set_title('(A) Sep for poll test only')
 ax1.set_xlabel('prevalence')
 ax2 = fig.add_subplot(1,2,2)
 ax2.plot(df_anti_se['p'],df_anti_se['1_lws'],label='antigen',color = 'k')
 for n in n_list:
     ax2.plot(df_all_se['p'], df_all_se[str(n) + '_lws'], label='PCR n='+str(n))
 ax2.set_xscale('log')
-ax2.set_title('Se for poll and individual')
+ax2.set_title('(B) Sed for two test processes')
 ax2.set_xlabel('prevalence')
 ax2.legend(ncol=1,bbox_to_anchor=(1,1),loc='upper left',fancybox=False)
 
 fig = plt.figure(2, figsize=(15, 6))
-ax3 = fig.add_subplot(1,2,2)
+ax3 = fig.add_subplot(1,2,1)
 for n in n_list:
     ax3.plot(df_se['p'],df_cpr[n],label='n='+str(n))
 #ax1.legend(ncol=1,bbox_to_anchor=(1,1),loc='upper left')
 ax3.set_xlim([0.1,0.5])
-ax3.set_ylim([0,20])
-ax3.set_title('CPR')
+ax3.set_ylim([2.5,13])
+ax3.set_title('(A) CPR')
 ax3.set_xlabel('prevalence')
 ax3.legend(ncol=4,bbox_to_anchor=(1,1))
 
-ax4 = fig.add_subplot(1,2,1)
+ax4 = fig.add_subplot(1,2,2)
 ax4.plot(df_se['p'],df_cpr['n_star'])
 ax4.set_xscale('log')
-ax4.set_title('Optimal n')
+ax4.set_title('(B) Optimal n')
 ax4.set_xlabel('prevalence')
 
 
