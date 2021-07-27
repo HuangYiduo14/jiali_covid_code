@@ -1,16 +1,19 @@
 import pandas as pd
 import numpy as np
+import os
+script_path = os.path.realpath(__file__)
+script_path=script_path[:-16]
 ##########################################################################################################
 ################## change file name here #################################################################
 ##########################################################################################################
-anti_file_name = 'exp_antigen_individual_round_3day.csv'
-anti_file_name_7 = 'exp_antigen_individual_round_7day.csv'
-nstar_file_name = 'exp_nstar7_round_2delay.csv'
-no_test_file_name = 'exp_no_testing.csv'
-indi_file_name = 'exp_individual_round_1delay.csv'
+anti_file_name = script_path+'exp_antigen_individual_round_3day.csv'
+anti_file_name_7 = script_path+'exp_antigen_individual_round_7day.csv'
+nstar_file_name = script_path+'exp_nstar7_round_2delay.csv'
+no_test_file_name = script_path+'exp_no_testing.csv'
+indi_file_name = script_path+'exp_individual_round_1delay.csv'
 ##########################################################################################################
 ##########################################################################################################
-
+print(anti_file_name)
 anti = pd.read_csv(anti_file_name)
 anti_7 = pd.read_csv(anti_file_name_7)
 nstar = pd.read_csv(nstar_file_name)
