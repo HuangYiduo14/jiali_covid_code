@@ -79,11 +79,21 @@ ax3.set_title('(A) CPR')
 ax3.set_xlabel('prevalence')
 ax3.legend(ncol=4,bbox_to_anchor=(1,1))
 
+
 ax4 = fig.add_subplot(1,2,2)
-ax4.plot(df_se['p'],df_cpr['n_star'])
+ax4.plot(df_se['p'],df_cpr['n_star'],color='tab:blue')
 ax4.set_xscale('log')
 ax4.set_title('(B) Optimal n')
 ax4.set_xlabel('prevalence')
+ax4.set_ylabel('n')
+ax4.tick_params(axis='y', labelcolor='tab:blue')
+
+ax5 = ax4.twinx()
+names = df_cpr['n_star'].astype(str).values+'_lws'
+ax5.plot(df_se['p'],[df_all_se.loc[index,names[index]] for index in df_all_se.index],color='tab:red')
+ax5.set_xscale('log')
+ax5.set_ylabel('Sed')
+ax2.tick_params(axis='y', labelcolor='tab:red')
 
 
 
