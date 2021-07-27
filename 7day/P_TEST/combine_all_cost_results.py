@@ -36,7 +36,7 @@ def plot_for_names(names, k=0):
 
 k=0
 k = plot_for_names(['Total labor cost','Reagents and Consumables'],k)
-k = plot_for_names(['Total infections'],k)
-k = plot_for_names(['Testing period'],k)
-k = plot_for_names(['Cost of one reduction in peak infection ($ per person)'],k)
+#k = plot_for_names(['Total infections'],k)
+#k = plot_for_names(['Testing period'],k)
+#k = plot_for_names(['Cost of one reduction in peak infection ($ per person)'],k)
 
