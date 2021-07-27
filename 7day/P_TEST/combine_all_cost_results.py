@@ -13,21 +13,30 @@ def stack_bar_plot(ax,names,df):
         datas.append(current_data)
         ax.bar(cats, current_data, bottom = bottom, label=name)
         bottom += current_data
-    ax.legend()
     return
 
-p_starts = [0.1,0.01,0.001,0.05,0.005]
-cwd = os.getcwd()
-folders = glob.glob(cwd+'/p_start*')
-df_lists = []
-k = 0
-for folder in folders:
-    csv_file = folder+'/cost analysis.csv'
-    df = pd.read_csv(csv_file,index_col=0)
-    df_lists.append(pd.read_csv(csv_file))
-    fig = plt.figure(k)
-    ax = fig.add_subplot(1,1,1)
-    stack_bar_plot(ax,['Total labor cost','Reagents and Consumables'],df)
-    ax.set_title('start from '+str(p_starts[k]))
-    k+=1
-plt.show()
+def plot_for_names(names, k=0):
+    p_starts = [0.1, 0.01, 0.001, 0.05, 0.005]
+    cwd = os.getcwd()
+    folders = glob.glob(cwd + '/p_start*')
+    df_lists = []
+
+    for i, folder in enumerate(folders):
+        csv_file = folder + '/cost analysis.csv'
+        df = pd.read_csv(csv_file, index_col=0)
+        df_lists.append(pd.read_csv(csv_file))
+        fig = plt.figure(k)
+        ax = fig.add_subplot(1, 1, 1)
+        stack_bar_plot(ax, names, df)
+        ax.set_title('start from ' + str(p_starts[i]))
+        ax.legend()
+        k += 1
+    plt.show()
+    return k
+
+k=0
+k = plot_for_names(['Total labor cost','Reagents and Consumables'],k)
+k = plot_for_names(['Total infections'],k)
+k = plot_for_names(['Testing period'],k)
+k = plot_for_names(['Cost of one reduction in peak infection ($ per person)'],k)
+
