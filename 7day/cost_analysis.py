@@ -65,6 +65,7 @@ def calculate_cost(df_result, is_antigen=False):
                 'Total infections': (df_result['I']+df_result['R']+df_result['Q']+df_result['SQ']).max(),
                 'Identified infections': df_result['TP'].sum(),
                 'False positives':df_result['FP'].sum(),
+                'False negative':df_result['FN'].sum(),
                 'Testing period':with_test_days
                 }
     else:
@@ -80,6 +81,7 @@ def calculate_cost(df_result, is_antigen=False):
                 'Total infections': (df_result['I'] + df_result['R'] + df_result['Q'] + df_result['SQ']).max(),
                 'Identified infections': df_result['TP'].sum(),
                 'False positives': df_result['FP'].sum(),
+                'False negative': df_result['FN'].sum(),
                 'Testing period': with_test_days
                 }
 
@@ -110,7 +112,10 @@ df_reduction = pd.DataFrame([reduction_peak,reduction_total],columns=col_names,i
 #import pdb; pdb.set_trace()
 
 
-df_cost = pd.DataFrame({'Flexiable PCR':calculate_cost(nstar),'Individual PCR':calculate_cost(indi), 'Antigen test(every 3 day)': calculate_cost(anti,is_antigen=True),'Antigen test(every 14 day)': calculate_cost(anti_7,is_antigen=True)})
+df_cost = pd.DataFrame({'Flexiable PCR':calculate_cost(nstar),'Individual PCR':calculate_cost(indi),
+                        'Antigen test(every 3 day)': calculate_cost(anti,is_antigen=True),
+                        'Antigen test(every 14 day)': calculate_cost(anti_7,is_antigen=True),
+                        'No test': calculate_cost(no_test,is_antigen=True)})
 
 df_cost = df_cost.append(df_reduction)
 df_cost.loc['Cost of one reduction in peak infection ($ per person)'] = (df_cost.loc['Total cost'])/(df_cost.loc['Reduction in peak'])
