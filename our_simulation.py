@@ -46,6 +46,7 @@ def CPR_group_test(df_trajs, n, daily_test_cap, se_i=0.9):
     prevalence = df_v_load['is_I'].sum() / df_v_load.shape[0]
     # calculate each load
     df_v_load['vload'] = 10 ** df_v_load['log10vload']
+    vl = df_v_load['vload'].mean()
     df_v_load.loc[df_v_load['vload'] <= 1 + EPS, 'vload'] = 0
     # calculate mean load for each group
     df_group_vl = df_v_load.groupby('group_name').agg({'vload': 'mean', 'is_I': 'sum'}).rename({'is_I': 'num_I_group'},
@@ -67,7 +68,7 @@ def CPR_group_test(df_trajs, n, daily_test_cap, se_i=0.9):
     total_patient_found = df_v_load['test_positive_ind'].sum()
 
     if total_tested_infected == 0:
-        return None,None,None,None,None
+        return None,None,None,None,None,None
     se_all = total_patient_found / total_tested_infected
 
     # note that cpr and se are not limited by the capacity, here we calculate over all population
@@ -81,11 +82,11 @@ def CPR_group_test(df_trajs, n, daily_test_cap, se_i=0.9):
     total_patient_found_theory = (df_v_load['test_positive_group'] & (df_v_load['vload'] > 10 ** detectable_load)).sum()
 
     if total_patient_found_theory<EPS:
-        return df_v_load, se, None, 0, se_all
+        return df_v_load, se, None, 0, se_all,vl
     total_test_needed = df_group_vl['number_of_test_group'].sum()
     cpr = total_test_needed / total_patient_found_theory
 
-    return df_v_load, se, cpr, 0, se_all
+    return df_v_load, se, cpr, 0, se_all,vl
 
 
 def give_se_cpr(df_trajs, daily_test_cap, n_list):
@@ -93,17 +94,20 @@ def give_se_cpr(df_trajs, daily_test_cap, n_list):
     cpr1_list = []
     se_list = []
     se_all_list = []
+    vl_list = []
     for n in n_list:
         if n == 1:
-            _, se, cpr, cpr1,se_all = CPR_group_test(df_trajs, n, daily_test_cap)
+            _, se, cpr, cpr1,se_all,vl = CPR_group_test(df_trajs, n, daily_test_cap)
             se_i = se
         else:
-            _, se, cpr, cpr1,se_all = CPR_group_test(df_trajs, n, daily_test_cap, se_i)
+            _, se, cpr, cpr1,se_all,vl = CPR_group_test(df_trajs, n, daily_test_cap, se_i)
+        print('n=',n,'vl=',vl)
         cpr_list.append(cpr)
         se_list.append(se)
         cpr1_list.append(cpr1)
         se_all_list.append(se_all)
-    return cpr_list, se_list, cpr1_list,se_all_list
+        vl_list.append(vl)
+    return cpr_list, se_list, cpr1_list,se_all_list, vl_list
 
 
 def calculate_v_load(df_trajs, is_random_day=False):
@@ -177,18 +181,20 @@ def SIRsimulation_get_curve(N, daily_test_cap, n_list, I0=100, R0=2.5, R02=0.8, 
     p_list = []
     cpr1_table = []
     se_all_table = []
+    vl_table = []
     for t in range(1):
         # -- calculate viral load --
         trajs = calculate_v_load(trajs)
         # n_star, trajs = find_opt_n(trajs, daily_test_cap)
-        cpr_t_list, se_t_list, cpr1_t_list, se_all_list = give_se_cpr(trajs, daily_test_cap, n_list)
+        cpr_t_list, se_t_list, cpr1_t_list, se_all_list,vl_list = give_se_cpr(trajs, daily_test_cap, n_list)
         p_t = I0 / trajs.shape[0]
         p_list.append(p_t)
         cpr_table.append(cpr_t_list)
         se_table.append(se_t_list)
         cpr1_table.append(cpr1_t_list)
         se_all_table.append(se_all_list)
-    return cpr_table, se_table, p_list, cpr1_table, se_all_table
+        vl_table.append(vl_list)
+    return cpr_table, se_table, p_list, cpr1_table, se_all_table,vl_table
 
 
 def save_data(p_list, n_list, data, name='test', save=False):
@@ -213,17 +219,19 @@ def plot_scatter(table,n_list):
 
 EPS = 1e-12
 #detectable_load = 5
-#n_list = [1]
+n_list = [1]
 detectable_load = 3
-n_list = [1, 2, 3, 4, 5, 6 ,7 ,8, 9, 10, 15, 20, 25, 30]
+#n_list = [1, 2, 3, 4, 5, 6 ,7 ,8, 9, 10, 15, 20, 25, 30]
 mcmc_result = get_mcmc_result()
 
 if __name__=='__main__':
-    p_random = 10**(-4+np.linspace(0,4,2000))
+    #p_random = 10**(-4+np.linspace(0,4,2000))
+    p_random = [1. for _ in range(1000)]
     cpr_random = []
     se_random = []
     cpr1_random = []
     se_all_random = []
+    vl_random = []
     N = 200000
     daily_test_cap = 1000
     k=0
@@ -231,14 +239,17 @@ if __name__=='__main__':
         print('exp',k,'random p', p)
         k+=1
         I0 = int(p * N)
-        cpr_table1, se_table1, _, cpr1_table1,se_all_table1 = SIRsimulation_get_curve(N, daily_test_cap, n_list, tmax=1, I0=I0)
+        cpr_table1, se_table1, _, cpr1_table1,se_all_table1,vl_table = SIRsimulation_get_curve(N, daily_test_cap, n_list, tmax=1, I0=I0)
         cpr_random.append(cpr_table1[0])
         se_random.append(se_table1[0])
         cpr1_random.append(cpr1_table1[0])
         se_all_random.append(se_all_table1[0])
+        vl_random.append(vl_table[0])
     #cpr1_table = save_data(p_random, n_list, cpr1_random, 'pcr_cpr1')
-    se_table = save_data(p_random, n_list, se_random, 'pcr_se')
-    se_all_table = save_data(p_random,n_list, se_all_random, 'pcr_se_all')
+    #se_table = save_data(p_random, n_list, se_random, 'pcr_se')
+    #se_all_table = save_data(p_random,n_list, se_all_random, 'pcr_se_all')
+    vl_table = save_data(p_random,n_list,vl_random,'viral_load_mean_i_only')
+    print(vl_table[1].mean())
     #cpr_table = save_data(p_random, n_list, cpr_random, 'anti_cpr')
 
 # <<test of data initialization: PASSED

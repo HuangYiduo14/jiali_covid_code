@@ -45,6 +45,11 @@ def calculate_cost(df_result, is_antigen=False):
     print(script_path)
     print(with_test_days)
 
+    diff_n = df_result['n_star'].diff()
+    diff_n.fillna(0.,inplace=True)
+    diff_n = diff_n.abs()>1e-12
+    total_n_change = int(diff_n.sum())
+
     rna_extr_consumables = rna_extr_consumables_per_pcr*total_tests.sum()
     rt_pcr_consumables = rt_pcr_consumables_per_pcr*total_tests.sum()
 
@@ -66,7 +71,10 @@ def calculate_cost(df_result, is_antigen=False):
                 'Identified infections': df_result['TP'].sum(),
                 'False positives':df_result['FP'].sum(),
                 'False negative':df_result['FN'].sum(),
-                'Testing period':with_test_days
+                'Testing period':with_test_days,
+                'Standard deviation pool size': np.std(n_stars),
+                'Number of changes in pool size': total_n_change,
+                'Average pool size change time (week)': (total_n_change+1)/with_test_days/7
                 }
     else:
         return {'RNA extraction consumables':rna_extr_consumables,'RT-PCR consumables':rt_pcr_consumables, 'Antigen test kits':0,
@@ -82,7 +90,10 @@ def calculate_cost(df_result, is_antigen=False):
                 'Identified infections': df_result['TP'].sum(),
                 'False positives': df_result['FP'].sum(),
                 'False negative': df_result['FN'].sum(),
-                'Testing period': with_test_days
+                'Testing period': with_test_days,
+                'Standard deviation pool size': np.std(n_stars),
+                'Number of changes in pool size': total_n_change,
+                'Average pool size change time (week)': (total_n_change + 1) / with_test_days / 7
                 }
 
 

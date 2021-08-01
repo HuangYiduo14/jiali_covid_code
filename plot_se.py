@@ -19,7 +19,8 @@ def lowess_data(n_list,df_se):
         z[z>1.] = 1.
         df_se[str(n)+'_lws'] = z
     return df_se
-n_list  = [1, 2, 3, 4, 5, 10, 15, 30]
+#n_list  = [1, 2, 3, 4, 5, 10, 15, 30]
+n_list = [1, 2, 3, 4, 5, 6 ,7 ,8, 9, 10, 15, 20, 25, 30]
 #n_list = [1]
 df_all_se = pd.read_csv('pcr_se_all_data.csv')
 df_all_se.sort_values(by='p',inplace=True)
@@ -32,6 +33,10 @@ df_se = lowess_data(n_list,df_se)
 df_anti_se = pd.read_csv('anti3_se_data.csv')
 df_anti_se.sort_values(by='p',inplace=True)
 df_anti_se = lowess_data([1],df_anti_se)
+
+df_vl = pd.read_csv('viral_load_mean_data.csv')
+df_vl.sort_values(by='p',inplace=True)
+df_vl = lowess_data([1],df_vl)
 
 
 n_test = df_se.shape[0]
@@ -51,22 +56,36 @@ df_cpr['n_star'] = df_cpr.idxmin(axis=1)
 
 
 fig = plt.figure(1, figsize=(15, 6))
-ax1 = fig.add_subplot(1,2,1)
+ax1 = fig.add_subplot(2,2,3)
 ax1.plot(df_anti_se['p'],df_anti_se['1_lws'],label='antigen',color = 'k')
 for n in n_list:
     ax1.plot(df_se['p'],df_se[str(n)+'_lws'],label='PCR n='+str(n))
 #ax1.legend(ncol=1,bbox_to_anchor=(1,1),loc='upper left')
 ax1.set_xscale('log')
-ax1.set_title('(A) Sep for poll test only')
-ax1.set_xlabel('prevalence')
-ax2 = fig.add_subplot(1,2,2)
+ax1.set_title('(B) Sensitivity for poll test (first stage)')
+#ax1.set_xlabel('prevalence')
+ax2 = fig.add_subplot(2,2,4)
 ax2.plot(df_anti_se['p'],df_anti_se['1_lws'],label='antigen',color = 'k')
 for n in n_list:
     ax2.plot(df_all_se['p'], df_all_se[str(n) + '_lws'], label='PCR n='+str(n))
 ax2.set_xscale('log')
-ax2.set_title('(B) Sed for two test processes')
-ax2.set_xlabel('prevalence')
+ax2.set_title('(C) Overall sensitivity for two-stage test')
+#ax2.set_xlabel('prevalence')
 ax2.legend(ncol=1,bbox_to_anchor=(1,1),loc='upper left',fancybox=False)
+
+axvl = fig.add_subplot(2,1,1)
+p = df_all_se['p'].values
+vl = df_vl[str(1)]
+a = np.polyfit(np.log(p),np.log(vl),1)
+axvl.scatter(p, vl, marker='.',alpha =0.2)
+axvl.plot(p, np.exp(a[0]*np.log(p)+a[1]),color='black')
+
+axvl.set_xscale('log')
+axvl.set_yscale('log')
+axvl.set_title('(A) Mean viral load')
+
+fig.text(0.5, 0.05,'prevalence', ha='center',fontsize=15)
+#axvl.legend(ncol=1,bbox_to_anchor=(1,1),loc='upper left',fancybox=False)
 
 fig = plt.figure(2, figsize=(15, 6))
 ax3 = fig.add_subplot(1,2,1)
@@ -93,6 +112,7 @@ names = df_cpr['n_star'].astype(str).values+'_lws'
 ax5.plot(df_se['p'],[df_all_se.loc[index,names[index]] for index in df_all_se.index],color='tab:red')
 ax5.set_xscale('log')
 ax5.set_ylabel('Sed')
+ax5.set_ylim([0,1])
 ax5.tick_params(axis='y', labelcolor='tab:red')
 
 
