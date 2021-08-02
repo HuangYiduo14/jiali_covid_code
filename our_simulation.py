@@ -13,24 +13,28 @@ def get_mcmc_result():
     # t01: last time greater than 0，
     # these 3 params determines one trajectory
     mcmc_result['tpg'] = mcmc_result['tp'] + mcmc_result['tg']
-    mcmc_result['is_tg_valid'] = (mcmc_result['vp'] >= detectable_load0) & \
-                                 ((mcmc_result['vp'] - detectable_load0) / mcmc_result['tp'] > detectable_load0 /
-                                  mcmc_result[
-                                      'tg'])
+    #mcmc_result['is_tg_valid'] = (mcmc_result['vp'] >= detectable_load0) & \
+    #                             ((mcmc_result['vp'] - detectable_load0) / mcmc_result['tp'] > detectable_load0 /
+    #                              mcmc_result[
+    #                                  'tg'])
+    mcmc_result['is_tg_valid'] = True
     is_tg_valid = mcmc_result['is_tg_valid']
     # case 1: tg is valid
-    mcmc_result.loc[is_tg_valid, 't00'] = mcmc_result.loc[is_tg_valid, 'tg'] - \
-                                          mcmc_result.loc[is_tg_valid, 'tp'] / (
-                                                  mcmc_result.loc[
-                                                      is_tg_valid, 'vp'] - detectable_load0) * detectable_load0
-    mcmc_result.loc[is_tg_valid, 't01'] = mcmc_result.loc[is_tg_valid, 'tw'] + mcmc_result.loc[is_tg_valid, 'tinc'] \
-                                          + detectable_load0 * (mcmc_result.loc[is_tg_valid, 'tw'] + mcmc_result.loc[
-        is_tg_valid, 'tinc']
-                                                               - mcmc_result.loc[is_tg_valid, 'tpg']) / (
-                                                  mcmc_result.loc[is_tg_valid, 'vp'] - detectable_load0)
+    #mcmc_result.loc[is_tg_valid, 't00'] = mcmc_result.loc[is_tg_valid, 'tg'] - \
+    #                                      mcmc_result.loc[is_tg_valid, 'tp'] / (
+    #                                              mcmc_result.loc[
+    #                                                  is_tg_valid, 'vp'] - detectable_load0) * detectable_load0
+    #mcmc_result.loc[is_tg_valid, 't01'] = mcmc_result.loc[is_tg_valid, 'tw'] + mcmc_result.loc[is_tg_valid, 'tinc'] \
+    #                                      + detectable_load0 * (mcmc_result.loc[is_tg_valid, 'tw'] + mcmc_result.loc[
+    #    is_tg_valid, 'tinc']
+    #                                                           - mcmc_result.loc[is_tg_valid, 'tpg']) / (
+    #                                              mcmc_result.loc[is_tg_valid, 'vp'] - detectable_load0)
     # case 2: tg is not valid
-    mcmc_result.loc[~is_tg_valid, 't00'] = 0
+    mcmc_result.loc[~is_tg_valid, 't00'] = mcmc_result.loc[~is_tg_valid, 'tg']
     mcmc_result.loc[~is_tg_valid, 't01'] = mcmc_result.loc[~is_tg_valid, 'tw'] + mcmc_result.loc[~is_tg_valid, 'tinc']
+    mcmc_result.loc[is_tg_valid, 't00'] = mcmc_result.loc[is_tg_valid, 'tg']
+    mcmc_result.loc[is_tg_valid, 't01'] = mcmc_result.loc[is_tg_valid, 'tw'] + mcmc_result.loc[is_tg_valid, 'tinc']
+
     return mcmc_result
 
 def CPR_group_test(df_trajs, n, daily_test_cap, se_i=0.9):
@@ -219,14 +223,14 @@ def plot_scatter(table,n_list):
 
 EPS = 1e-12
 #detectable_load = 5
-n_list = [1]
+#n_list = [1]
 detectable_load = 3
-#n_list = [1, 2, 3, 4, 5, 6 ,7 ,8, 9, 10, 15, 20, 25, 30]
+n_list = [1, 2, 3, 4, 5, 6 ,7 ,8, 9, 10, 15, 20, 25, 30]
 mcmc_result = get_mcmc_result()
 
 if __name__=='__main__':
-    #p_random = 10**(-4+np.linspace(0,4,2000))
-    p_random = [1. for _ in range(1000)]
+    p_random = 10**(-4+np.linspace(0,4,2000))
+    #p_random = [1. for _ in range(1000)]
     cpr_random = []
     se_random = []
     cpr1_random = []
@@ -245,11 +249,11 @@ if __name__=='__main__':
         cpr1_random.append(cpr1_table1[0])
         se_all_random.append(se_all_table1[0])
         vl_random.append(vl_table[0])
-    #cpr1_table = save_data(p_random, n_list, cpr1_random, 'pcr_cpr1')
-    #se_table = save_data(p_random, n_list, se_random, 'pcr_se')
-    #se_all_table = save_data(p_random,n_list, se_all_random, 'pcr_se_all')
-    vl_table = save_data(p_random,n_list,vl_random,'viral_load_mean_i_only')
-    print(vl_table[1].mean())
+    cpr1_table = save_data(p_random, n_list, cpr1_random, 'new_anti_cpr1_LOD5')
+    se_table = save_data(p_random, n_list, se_random, 'new_anti_se_LOD5')
+    se_all_table = save_data(p_random,n_list, se_all_random, 'new_anti_se_all_LOD5')
+    vl_table = save_data(p_random,n_list,vl_random,'new_anti_viral_load_mean_LOD5')
+    #print(vl_table[1].mean())
     #cpr_table = save_data(p_random, n_list, cpr_random, 'anti_cpr')
 
 # <<test of data initialization: PASSED
