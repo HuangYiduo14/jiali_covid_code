@@ -25,7 +25,7 @@ EPS = 1e-12
 # # set 2: pcr
 #
 detectable_load = 3
-n_list = [1, 2, 3, 4, 5, 6 ,7 ,8, 9, 10, 15, 20, 25, 30]
+n_list = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 25, 30]
 df_se = pd.read_csv('se_p_pcr_data.csv')
 df_all_se  = pd.read_csv('se_d_pcr_data.csv')
 sp = 0.986
@@ -41,20 +41,6 @@ mcmc_result = get_mcmc_result()
 color_table = {1:'b', 2:'r', 3:'g', 4:'c', 30:'m', 10:'y'}
 
 
-def lowess_data(n_list,df_se):
-    # fit curve se
-    for n in n_list:
-        x = df_se['p'].values
-        y = df_se[str(n)].values
-        z = lowess(y,x,return_sorted=False,frac=1./10)
-        z[z>1.] = 1.
-        df_se[str(n)+'_lws'] = z
-        #if n in list(color_table.keys()):
-            # plt.scatter(x,y,alpha=0.4,color=color_table[n])
-        #    plt.plot(x,z,color =color_table[n],label=n)
-    #plt.legend()
-    return df_se
-
 def group_test(t,df_trajs, n, daily_test_cap, test_policy='periodical'):
     # do group test for each group with given n and curve
     # make groupname
@@ -63,7 +49,7 @@ def group_test(t,df_trajs, n, daily_test_cap, test_policy='periodical'):
     #     log10vload and is_I: v load and indicate if this is infected
     if n==1:
         df_v_load = df_trajs.loc[
-            df_trajs['need_test_today'], ['log10vload', 'is_I']].copy()  # we select people that need test only
+            df_trajs['need_test_today']>0, ['log10vload', 'is_I']].copy()  # we select people that need test only
         df_v_load['vload'] = 10 ** df_v_load['log10vload']
         df_v_load.loc[df_v_load['vload'] <= 1 + EPS, 'vload'] = 0
         df_v_load['number_of_test_group'] = 1
@@ -92,7 +78,7 @@ def group_test(t,df_trajs, n, daily_test_cap, test_policy='periodical'):
 
         return df_v_load, number_of_total_tests, number_of_group_tests, TP, TN, FP, FN
 
-    df_v_load = df_trajs.loc[df_trajs['need_test_today'],['log10vload', 'is_I']].copy() # we select people that need test only
+    df_v_load = df_trajs.loc[df_trajs['need_test_today']>0,['log10vload', 'is_I']].copy() # we select people that need test only
     N_test = df_v_load.shape[0] # number of people that need test
     group_name = np.arange(N_test)
     np.random.shuffle(group_name)
@@ -146,7 +132,7 @@ def group_test(t,df_trajs, n, daily_test_cap, test_policy='periodical'):
     return df_v_load, number_of_total_tests, number_of_group_tests, TP,TN,FP,FN
 
 # first we consider SIR model
-def SIRsimulation(N, table_n_star,external_infection_rate=0,test_round=100,
+def SIRsimulation_for_se(N,external_infection_rate=0,test_round=100,
                             n_star_policy='daily',test_policy = 'periodical', n_period = 7, period = 7, round_daily_test_cap=10000,fixed_n=1,p_start=0.001,
                             T_lead = 1, I0=100, R0=2.5, R02=2.5, R03=2.5, tmax=365, t_start=80,t_end=150, sym_ratio=0.4, exp_name='default_exp'):
     # << here external_rate HYD
@@ -154,7 +140,6 @@ def SIRsimulation(N, table_n_star,external_infection_rate=0,test_round=100,
     run SIR simulation
     :param N: population size
     :param n_list: list of n that we want in our experiments
-    :param table_n_star: a table recording n star and p, must have columns ['n_star'] and index is 'p'
     :param external_infection_rate: external infection rate
 
     :param n_star_policy: how to get optimal {'daily','period','fixed'}
@@ -187,6 +172,8 @@ def SIRsimulation(N, table_n_star,external_infection_rate=0,test_round=100,
     col_names = ['S', 'I', 'R', 'Q', 'SQ', 'total_tested_individual', 'positive_results', 'number_of_total_tests',
                  'n_star', 'number_of_group_tests','TP','TN','FP','FN','n_star_by_sim','mean_day','std_day']
     log_exp_table = []
+    log_se_table = []
+    se_col_names = ['p']+['sep{0}'.format(n) for n in n_list]+['sed{0}'.format(n) for n in n_list]
     # -- define beta as a function of time --recover time mean(tw+t_incu)
     # HERE R0 is not Rt
     gamma = 1. / 20.68
@@ -254,23 +241,23 @@ def SIRsimulation(N, table_n_star,external_infection_rate=0,test_round=100,
         # assert S + R + I+Q+SQ == trajs.shape[0]
         trajs = calculate_v_load(trajs) # calculate viral load
         # calculate n_star
+        print('p=',p_t)
+
+        for _ in range(1):
+            se_d_list, se_p_list, _ = give_se_cpr(trajs.loc[trajs['is_I'] | trajs['is_R'] | trajs['is_S']],
+                                                  detectable_load, n_list=n_list)
+            log_se_table.append([p_t]+se_p_list+se_d_list)
+
         if n_star_policy=='daily' or t%n_period==0:
-            idx_closest = np.searchsorted(table_n_star.index.values, p_t)
-            n_star = int(table_n_star.iloc[idx_closest]['n_star'])
             # we can also simulate the process to compare the result
-            n_list_temp= [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 25, 30]
+            n_list_temp= n_list
             cpr_temp = np.zeros_like(n_list_temp)
-
-
-            se_d_list, se_p_list, _ = give_se_cpr(trajs, detectable_load, n_list = n_list_temp)
             cpr_temp[0] = 1./se_p_list[0]/p_t
             for i,n in enumerate(n_list_temp):
                 if n>1:
                     cpr_temp[i] = 1. / se_d_list[i] / p_t * (1. / n + se_p_list[i] - (se_p_list[i]+sp-1) * (1 - p_t) ** n)
             n_star_this = n_list_temp[np.argmin(cpr_temp)]
-
-
-
+            n_star = n_star_this
 
 
         if n_star_policy=='fixed':
@@ -280,15 +267,13 @@ def SIRsimulation(N, table_n_star,external_infection_rate=0,test_round=100,
         # step 1. identify the people that 'need_test_today' according to different policies
         if test_policy=='round':
             if ((I / N) < p_start) & (t <= t_begin):
-                print('-------------------possible error-------------------')
+                print('-------------------test not start-------------------')
                 round_daily_test_cap = 0
             elif (I == 0):
                 print('-------------------test end-------------------')
                 break
             else:
-                print('------------test_today--------------------')
-                t_begin = t
-                print('t_begin',t_begin)
+                print('------------test today--------------------')
                 round_daily_test_cap = round_daily_test_cap_rec
 
             trajs['need_test_today'] = trajs['round_test_needed']
@@ -320,13 +305,9 @@ def SIRsimulation(N, table_n_star,external_infection_rate=0,test_round=100,
         trajs['get_test'] = test_result['get_test']
         trajs['get_test'].fillna(False,inplace=True)
         trajs['true_positive_ind'] = test_result['true_positive_ind']
-
-
         trajs['true_positive_ind'].fillna(False,inplace=True)
         will_be_Q_in_T_lead = trajs['true_positive_ind'] & (trajs['day_until_remove'] == big_M)
         trajs.loc[will_be_Q_in_T_lead, 'day_until_remove'] = T_lead
-
-
         # import pdb; pdb.set_trace()
 
         # -- update according to SIR --
@@ -356,7 +337,6 @@ def SIRsimulation(N, table_n_star,external_infection_rate=0,test_round=100,
         trajs.loc[is_removed_from_test, 'is_I'] = False
         trajs.loc[is_removed_from_test, 'is_SQ'] = False
         trajs.loc[is_removed_from_test, 'is_Q'] = True
-
 
         # I,Q,SQ -> R
         is_removed_final = trajs['day'] > trajs['tw'] + trajs['tinc']
@@ -398,8 +378,6 @@ def SIRsimulation(N, table_n_star,external_infection_rate=0,test_round=100,
         trajs.loc[trajs['is_SQ'], 'day'] += 1
 
 
-
-
         #col_names = ['S', 'I', 'R', 'Q', 'SQ', 'total_tested_individual', 'positive_results', 'number_of_total_tests',
         #             'n_star', 'number_of_group_tests', 'TP', 'TN', 'FP', 'FN', 'n_star_by_sim', 'mean_day', 'std_day']
         #print(S,I,R,Q,SQ,trajs['get_test'].sum(),trajs['true_positive_ind'].sum(),number_of_total_tests,n_star,number_of_group_tests,TP,TN,FP,FN,file=file_log)
@@ -425,38 +403,20 @@ def SIRsimulation(N, table_n_star,external_infection_rate=0,test_round=100,
     df['total_sample'] =  (df['TP'] + df['FP'])+(df['TN'] + df['FN'])
 
 
-    df.to_csv('exp_'+exp_name+'.csv')
-    return df
+    #df.to_csv('exp_'+exp_name+'.csv')
+
+    df_se_result = pd.DataFrame(log_se_table, columns=se_col_names)
+    #df_se_result.to_csv('se_'+exp_name+'.csv')
 
 
-df_se = lowess_data(n_list,df_se)
-df_all_se = lowess_data(n_list, df_all_se)
-
-# df_se.to_csv('se_data_lws.csv',index=False)
-# df_se = pd.read_csv('se_data_lws.csv').drop('Unnamed: 0',axis=1)
-n_test = df_se.shape[0]
-cpr_matrix = np.zeros((n_test, len(n_list)))
-for i, n in enumerate(n_list):
-    if n==1:
-        cpr_matrix[:,0] = 1./df_se[str(n)+'_lws'].values/df_se['p'].values
-    else:
-        se_vect = df_se[str(n)+'_lws'].values
-        se_all_vect = df_all_se[str(n)+'_lws'].values
-        p_vect = df_se['p'].values
-        # cpr_matrix[:,i] = 1. / se_vect / df_se['1_lws'].values / p_vect * (1. / n + se_vect - (se_vect+sp-1) * (1 - p_vect) ** n)
-        cpr_matrix[:,i] = 1. / se_all_vect / p_vect * (1. / n + se_vect - (se_vect+sp-1) * (1 - p_vect) ** n)
-
-df_cpr = pd.DataFrame(cpr_matrix,columns=n_list)
-df_cpr['p'] = df_se['p']
-df_cpr.set_index('p',inplace=True)
-df_cpr['n_star'] = df_cpr.idxmin(axis=1)
+    return df, df_se_result
 
 # here we have all cpr data
 # df_cpr['n_star'].plot() # draw n star plot here <<<<<
 print('>> n_star curve generated','**'*100)
 
 N=100000
-I0 = int(N//2000)
+I0 = int(N//200)
 capcity = int(N//60)
 tmax=365
 test_round = 10000000
@@ -482,13 +442,43 @@ t_lead_antigen = 0
 #result_nstar7_round_2delay = SIRsimulation(N, table_n_star=df_cpr, exp_name='nstar7_round_2delay_0.0125',T_lead = 2,test_round = test_round,p_start=0.0125,
 #                             n_star_policy='period',test_policy = 'round', I0=I0,round_daily_test_cap=capcity,tmax=tmax)
 #
-result_nstar7_round_2delay = SIRsimulation(N, table_n_star=df_cpr, exp_name='nstar7_round_2delay_0.01',T_lead = 2,
-                                           test_round = test_round, p_start=0.01, n_star_policy='period',test_policy = 'round', I0=I0,round_daily_test_cap=capcity,tmax=tmax)
-#
-result_nstar7_round_2delay[['n_star','n_star_by_sim']].plot()
-result_nstar7_round_2delay['mean_day'].plot()
-result_nstar7_round_2delay['std_day'].plot()
 
+import multiprocessing
+cpu_count = multiprocessing.cpu_count()
+import tqdm
+
+def get_results(seed):
+    np.random.seed(seed)
+    result_nstar7_round_2delay, result_se = SIRsimulation_for_se(N, exp_name='nstar7_round_2delay_0.01', T_lead=2,
+                                                                 test_round=test_round, p_start=0.01,
+                                                                 n_star_policy='period', test_policy='round', I0=I0,
+                                                                 round_daily_test_cap=capcity, tmax=tmax)
+    max_p_date = result_se['p'].idxmax()
+    result_se_up = result_se.loc[:max_p_date]
+    result_se_down = result_se.loc[max_p_date:]
+    return [result_se_up, result_se_down]
+
+
+if __name__=='__main__':
+    all_results = []
+    seeds = [1]
+
+    all_results = [get_results(1)]
+
+    #with multiprocessing.Pool(cpu_count) as pool:
+    #    for result in tqdm.tqdm(pool.imap_unordered(get_results, seeds), total=len(seeds)):
+    #        all_results.append(result)
+    se_up_all = []
+    se_down_all = []
+    for i in range(10):
+        se_up_all.append(all_results[i][0])
+        se_down_all.append(all_results[i][1])
+    se_up_all = pd.concat(se_up_all)
+    se_down_all = pd.concat(se_down_all)
+
+    for n in n_list:
+        plt.scatter(se_up_all['p'], se_up_all['sep{0}'.format(n)], label=n)
+    plt.legend()
 
 
 

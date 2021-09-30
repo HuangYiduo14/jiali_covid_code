@@ -75,6 +75,8 @@ def CPR_group_test(df_trajs, detectable_load, n, save_vl = False):
     if n==1:
         assert abs(se_p-se_d)<EPS
 
+    if se_p >0.8:
+        import pdb; pdb.set_trace()
     return df_v_load, se_p, se_d, vl
 
 
