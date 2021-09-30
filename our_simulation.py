@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import multiprocessing
 cpu_count = multiprocessing.cpu_count()
+import tqdm
 import matplotlib.pyplot as plt
 
 # revision 2: we will use tg as t00,
@@ -138,7 +139,8 @@ def SIRsimulation_get_curve(N, detectable_load, n_list, I0=100, save_vl=False):
     # set day 0 patients
     trajs.loc[:I0 - 1, 'is_I'] = True
     trajs.loc[:I0 - 1, 'is_S'] = False
-    trajs.loc[:I0 - 1, 'day'] = (trajs.loc[:I0 - 1, 'tinc'].values + trajs.loc[:I0 - 1, 'tw'].values) * np.random.rand(I0)  # we assume all these patients are incu
+    trajs.loc[:I0 - 1, 'day'] = trajs.loc[:I0 - 1, 'tinc'].values * np.random.rand(I0)
+    #trajs.loc[:I0 - 1, 'day'] = (trajs.loc[:I0 - 1, 'tinc'].values + trajs.loc[:I0 - 1, 'tw'].values) * np.random.rand(I0)  # we assume all these patients are incu
     # note that in pandas loc, we have to subtract 1 to make dim correct
     # -- calculate viral load --
     trajs = calculate_v_load(trajs)
@@ -158,7 +160,7 @@ def save_data(p_list, n_list, data, name='test'):
 
 
 
-name = 'antigen' #{'pcr','antigen'}
+name = 'pcr' #{'pcr','antigen'}
 EPS = 1e-12
 
 if name == 'pcr':
@@ -181,8 +183,11 @@ if __name__=='__main__':
     p_random = np.repeat(p_random, 1)
     p_random.sort()
     #p_random = [1. for _ in range(1000)]
+    all_results = []
+
     with multiprocessing.Pool(cpu_count) as pool:
-        all_results = pool.map(get_results, p_random)
+        for result in tqdm.tqdm(pool.imap_unordered(get_results, p_random),total=len(p_random)):
+            all_results.append(result)
 
     se_d_table = [result[0] for result in all_results]
     se_p_table = [result[1] for result in all_results]
