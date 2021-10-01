@@ -1,53 +1,135 @@
-from our_simulation import get_mcmc_result, calculate_v_load, give_se_cpr
-import pandas as pd
-import numpy as np
 import statsmodels.api as sm
-import sys
 import time
+import numpy as np
+import pandas as pd
+import multiprocessing
+import tqdm
 
-import matplotlib.pyplot as plt
+cpu_count = multiprocessing.cpu_count()
 lowess = sm.nonparametric.lowess
-
-#df_cpr.sort_values(by='p',inplace=True)
 big_M=999
-
 EPS = 1e-12
-##########################################################
-# change detectable load and n_list here
-#########################################################
-# set 1: antigen
-#detectable_load = 5
-#n_list = [1]
-#df_se = pd.read_csv('se_anti_data.csv')
-#sp = 0.984
-#t_lead = 0
-
-# # set 2: pcr
-#
-detectable_load = 2
-n_list = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 25, 30]
-df_se = pd.read_csv('se_p_pcr_data.csv')
-df_all_se  = pd.read_csv('se_d_pcr_data.csv')
-sp = 0.986
-# # t_lead = 1
-
-##########################################################
-# change detectable load and n_list here: end
-#########################################################
-df_se.sort_values(by='p',inplace=True)
-df_all_se.sort_values(by='p',inplace=True)
-
-mcmc_result = get_mcmc_result()
-color_table = {1:'b', 2:'r', 3:'g', 4:'c', 30:'m', 10:'y'}
 
 
-def group_test(t,df_trajs, n, daily_test_cap, test_policy='periodical'):
+
+# revision 2: we will use tg as t00,
+def get_mcmc_result():
+    # this function will generate VL trajectories from posterior distribution of parameters
+    file_name = 'used_pars_swab_1.csv' # this file should contain samples from posterior distribution of parameters tg, tp, tw, tinc, vp
+    mcmc_result = pd.read_csv(file_name)
+    mcmc_result = mcmc_result.dropna()
+    mcmc_result.reset_index(inplace=True, drop=True)
+    # t00: first time greater than 0,
+    # tpg: tp+tg,
+    # t01: last time greater than 0，
+    # these 3 params determines one trajectory
+    mcmc_result['tpg'] = mcmc_result['tg']+mcmc_result['tp']
+    mcmc_result['t00'] = mcmc_result['tg']
+    mcmc_result['t01'] = mcmc_result['tw'] + mcmc_result['tinc']
+    return mcmc_result
+
+mcmc_result = get_mcmc_result() # this is the global dataframe that will keep the posterior samples
+
+def simulate_one_group_test(df_trajs, detectable_load, n, save_vl = False):
+    # this function simulate one group test for people in df_trajs
+    # df_trajs must has col ['log10vload', 'is_I']
+    # n: size of each group
+    # do group test for each group with given n and curve
+    # make groupname
+    N = df_trajs.shape[0]
+    group_name = np.arange(N)
+    np.random.shuffle(group_name)
+    group_name = group_name // n
+    df_v_load = df_trajs[['log10vload', 'is_I']].copy()
+    df_v_load['get_test'] = True
+    df_v_load['is_I'] = 1 * df_v_load['is_I']
+    df_v_load['group_name'] = group_name
+    prevalence = df_v_load['is_I'].sum() / df_v_load.shape[0]
+    # calculate each vload
+    df_v_load['vload'] = 10 ** df_v_load['log10vload']
+    vl = df_v_load['vload'].mean()
+    if vl<=2: # since exp(0)=1, non-infected persons should have vl of 0
+        vl = 0
+    df_v_load.loc[df_v_load['vload'] <= 1 + EPS, 'vload'] = 0
+    # calculate mean load for each group
+    # df_group_vl is the table where each group is one row
+    df_group_vl = df_v_load.groupby('group_name').agg({'vload': 'mean', 'is_I': 'sum'}).rename({'is_I': 'num_I_group'},
+                                                                                               axis=1)
+    df_group_vl['test_positive_group'] = df_group_vl['vload'] > 10 ** detectable_load
+    if n > 1:
+        df_group_vl['number_of_test_group'] = 1 + n * df_group_vl['test_positive_group']
+    else:
+        df_group_vl['number_of_test_group'] = 1
+    df_group_vl.reset_index(inplace=True)  # make group number an col instead of index
+    df_v_load = df_v_load.join(df_group_vl, on='group_name', how='left', rsuffix='_group')  # join table on group names to find our group test results
+    df_v_load['test_positive_ind'] = df_v_load['get_test'] & df_v_load['test_positive_group'] & (
+            df_v_load[
+                'vload'] > 10 ** detectable_load)  # test_positive_ind: if this person get tested and the result is positive
+    if save_vl:
+        df_v_load.to_csv('ind_v_load.csv')
+    total_tested_infected = df_v_load['is_I'].sum()
+    total_patient_found = df_v_load['test_positive_ind'].sum()
+    if total_tested_infected == 0:
+        return df_v_load,0,0,vl
+    se_d = total_patient_found / total_tested_infected
+    # note that cpr and se are not limited by the capacity, here we calculate over all population
+    total_infected_group = (df_group_vl['num_I_group'] > 0).sum()
+    total_test_out_group = df_group_vl['test_positive_group'].sum()
+    if total_infected_group < EPS:
+        se_p = 0
+    else:
+        se_p = total_test_out_group / total_infected_group
+    if n==1:
+        assert abs(se_p-se_d)<EPS
+    return df_v_load, se_p, se_d, vl
+
+
+def give_se_cpr(df_trajs, detectable_load, n_list, save_vl = False):
+    # give sed and sep for a list of n
+    se_p_list = []
+    se_d_list = []
+    vl_list = []
+    for n in n_list:
+        if n == 1:
+            _, se_p, se_d,vl = simulate_one_group_test(df_trajs,detectable_load, n, save_vl=save_vl)
+            se_i = se_p
+        else:
+            _, se_p, se_d,vl = simulate_one_group_test(df_trajs,detectable_load, n, save_vl=save_vl)
+        #print('n=',n,'vl=',vl)
+        se_d_list.append(se_d)
+        se_p_list.append(se_p)
+        vl_list.append(vl)
+    return se_d_list, se_p_list, vl_list
+
+def calculate_v_load(df_trajs):
+    '''
+    calculate viral load using trajectory dataframe
+    :param df_trajs: updated table
+    :return: updated table
+    '''
+    mask0 = (df_trajs['day'] <= df_trajs['t00']) | (df_trajs['day'] >= df_trajs['t01'])
+    df_trajs.loc[mask0, 'log10vload'] = 0
+    mask1 = (df_trajs['day'] > df_trajs['t00']) & (df_trajs['day'] <= df_trajs['tpg'])  # incresing
+    df_temp1 = df_trajs['vp'] / (df_trajs['tpg'] - df_trajs['t00']) * (df_trajs['day'] - df_trajs['t00'])
+    df_trajs.loc[mask1, 'log10vload'] = df_temp1.loc[mask1]
+    mask2 = (df_trajs['day'] > df_trajs['tpg']) & (df_trajs['day'] <= df_trajs['t01'])  # decresing
+    df_temp2 = df_trajs['vp'] / (df_trajs['t01'] - df_trajs['tpg']) * (
+            df_trajs['t01'] - df_trajs['day'])
+    df_trajs.loc[mask2, 'log10vload'] = df_temp2.loc[mask2]
+    df_trajs[['log10vload']].to_csv('new_vload_distribution.csv')
+    return df_trajs
+
+def group_test(df_trajs, n, daily_test_cap, parameters):
     # do group test for each group with given n and curve
     # make groupname
     # the input df_trajs must have cols:
     #     need_test_today: bool indicate that if this person need to be tested
     #     log10vload and is_I: v load and indicate if this is infected
+    sp = parameters['sp']
+    test_policy = parameters['test_policy']
+    detectable_load = parameters['LOD']
     if n==1:
+        # for n=1, we only do individual tests
         df_v_load = df_trajs.loc[
             df_trajs['need_test_today']>0, ['log10vload', 'is_I']].copy()  # we select people that need test only
         df_v_load['vload'] = 10 ** df_v_load['log10vload']
@@ -72,10 +154,6 @@ def group_test(t,df_trajs, n, daily_test_cap, test_policy='periodical'):
         # assert TP + TN + FP + FN == df_v_load['get_test'].sum()
         number_of_total_tests = df_v_load['get_test'].sum()
         number_of_group_tests = 0
-        # if test_policy == 'round':
-        #     assert number_of_total_tests <= daily_test_cap
-        # import pdb; pdb.set_trace()
-
         return df_v_load, number_of_total_tests, number_of_group_tests, TP, TN, FP, FN
 
     df_v_load = df_trajs.loc[df_trajs['need_test_today']>0,['log10vload', 'is_I']].copy() # we select people that need test only
@@ -92,17 +170,9 @@ def group_test(t,df_trajs, n, daily_test_cap, test_policy='periodical'):
                                                                                                axis=1)
     df_group_vl['positive_group'] = df_group_vl['num_I_group'] > 0
     df_group_vl['true_positive_group'] = df_group_vl['vload'] > 10 ** detectable_load
-    # here we add false positive cases
-    # possible error
-    # df_group_vl['false_positive_group'] = (np.random.rand(df_group_vl.shape[0])>=sp)&(~df_group_vl['true_positive_group'])
-
-
     df_group_vl['false_positive_group'] = (np.random.rand(df_group_vl.shape[0])>=sp)&(~df_group_vl['positive_group'])
     df_group_vl['test_positive_group'] = df_group_vl['true_positive_group']|df_group_vl['false_positive_group']
     df_group_vl['number_of_test_group'] = 1 + n * df_group_vl['test_positive_group']
-
-    # import pdb; pdb.set_trace()
-
     # only selected group can be tested
     if test_policy=='round':
         df_group_vl['cumsum_test'] = df_group_vl['number_of_test_group'].cumsum()
@@ -116,39 +186,36 @@ def group_test(t,df_trajs, n, daily_test_cap, test_policy='periodical'):
             df_v_load['vload'] > 10 ** detectable_load)  # test_positive_ind: if this person get tested and the result is positive
     df_v_load['false_positive_ind'] = df_v_load['get_test'] & df_v_load['test_positive_group'] & (
                 np.random.rand(df_v_load.shape[0])>=sp) & (~df_v_load['is_I'])
-
     df_v_load['test_positive_ind'] = df_v_load['true_positive_ind']|df_v_load['false_positive_ind']
     TP = df_v_load['true_positive_ind'].sum()
     TN = (df_v_load['get_test']&(~df_v_load['is_I'])&(~df_v_load['test_positive_ind'])).sum()
     FP = df_v_load['false_positive_ind'].sum()
     FN = (df_v_load['get_test']&df_v_load['is_I']&(~df_v_load['test_positive_ind'])).sum()
-    # assert TP+TN+FP+FN ==df_v_load['get_test'].sum()
-    # assert (1 * df_v_load['is_I'] - 1 * df_v_load['true_positive_ind']).min() >= 0
     number_of_total_tests = (df_group_vl['number_of_test_group'] * df_group_vl['get_test']).sum()
     number_of_group_tests = df_group_vl['get_test'].sum()
-    # if test_policy=='round':
-    #     assert number_of_total_tests<=daily_test_cap
-    # df_v_load.to_csv('df_v_load_%d.csv'%t)
     return df_v_load, number_of_total_tests, number_of_group_tests, TP,TN,FP,FN
 
-# first we consider SIR model
-def SIRsimulation_for_se(N,external_infection_rate=0,test_round=100,
-                            n_star_policy='daily',test_policy = 'periodical', n_period = 7, period = 7, round_daily_test_cap=10000,fixed_n=1,p_start=0.001,
-                            T_lead = 1, I0=100, R0=2.5, R02=2.5, R03=2.5, tmax=365, t_start=80,t_end=150, sym_ratio=0.4, exp_name='default_exp'):
-    # << here external_rate HYD
-    '''
-    run SIR simulation
-    :param N: population size
-    :param n_list: list of n that we want in our experiments
-    :param external_infection_rate: external infection rate
 
+
+
+
+
+# first we consider SIR model
+def SIRsimulation_for_se(N, parameters, table_n_star_up=None, table_n_star_down=None, external_infection_rate=0,test_round=100,
+                            n_star_policy='daily',test_policy = 'periodical', n_period = 7, period = 7, round_daily_test_cap=10000,fixed_n=1,p_start=0.001,
+                            T_lead = 1, I0=100, R0=2.5, R02=2.5, R03=2.5, tmax=365, t_start=80,t_end=150, sym_ratio=0.4, exp_name='default_exp',use_table=False):
+    '''
+    run SIR simulation to evaluate Se
+    :param N: population size
+    :param parameters: parameters of LOD, n_list candidate, sp
+    :param table_n_star_up: a table recording n star and p, must have columns ['n_star','up'] and index is 'p' up is for increasing period, down is for decreasing period
+    :param external_infection_rate: external infection rate
     :param n_star_policy: how to get optimal {'daily','period','fixed'}
     :param test_policy: how to test people {'periodical','round'}
     :param n_period: if we update n periodically, the period
     :param period: if we use period test, the period
     :param round_daily_test_cap: if we use round test, the daily test capacity (all tested)
     :param fixed_n: if we use fixed n policy, the value of n
-
     :param T_lead: time needed for the test, T_lead=1 means the result will come out tomorrow
     :param I0: number of infections at day 0
     :param R0: reproduction rate
@@ -163,18 +230,17 @@ def SIRsimulation_for_se(N,external_infection_rate=0,test_round=100,
     here cpr1 is calculated using formula (1)
     cpr is calculated using from simulation
     '''
-    # file_log = open('exp0_'+exp_name+'.txt','w')
-    # print(exp_name, ':', file=file_log)
-    # print(sys.argv[1:],file=file_log)
-    # print('='*100,file=file_log)
-    # file_log.flush()
+    n_list = parameters['n_list']
+    detectable_load = parameters['LOD']
+    sp = parameters['sp']
+
     print('S, I, R, Q, SQ, total_tested_individual, positive_results, number_of_total_tests, n_star, number_of_group_tests, TP,TN,FP,FN')
+    # initialize record table, we will add one row each day
     col_names = ['S', 'I', 'R', 'Q', 'SQ', 'total_tested_individual', 'positive_results', 'number_of_total_tests',
                  'n_star', 'number_of_group_tests','TP','TN','FP','FN','n_star_by_sim','mean_day','std_day']
     log_exp_table = []
     log_se_table = []
     se_col_names = ['p']+['sep{0}'.format(n) for n in n_list]+['sed{0}'.format(n) for n in n_list]
-    # -- define beta as a function of time --recover time mean(tw+t_incu)
     # HERE R0 is not Rt
     gamma = 1. / 20.68
     def beta(t):
@@ -185,10 +251,10 @@ def SIRsimulation_for_se(N,external_infection_rate=0,test_round=100,
         else:
             return R03 * gamma
     # -- initialize the model --
+    # all persons trajectory information and infection information is in trajs table
     trajs = mcmc_result.sample(N, replace=True)  # sample trajectories for these people from MCMC results
     trajs.reset_index(inplace=True, drop=True)
     trajs['log10vload'] = 0
-
     trajs['is_I'] = False
     trajs['is_S'] = True
     trajs['is_R'] = False
@@ -209,24 +275,16 @@ def SIRsimulation_for_se(N,external_infection_rate=0,test_round=100,
                 (trajs.loc[:I0 - 1, 'tinc'].values) * np.random.rand(I0)).astype(
         int)  # we assume all these patients are incu
     # note that in pandas loc, we have to subtract 1 to make dim correct
-    # import pdb;pdb.set_trace()
-
-    # possible error
     if test_policy == 'round':
-        # trajs['round_test_needed'] = trajs['will_test']
-        #                              # &(trajs['is_I']|trajs['is_S']|trajs['is_R']|trajs['is_SQ']|trajs['is_Q']) # if is round test, we will have a column to indicate if tested or not
-
         trajs['round_test_needed'] = trajs['will_test']&(trajs['is_I']|trajs['is_R']|trajs['is_S']) # if is round test, we will have a column to indicate if tested or not
-
-
     else:
         trajs['period_test_in_days'] = big_M # if is period test, we need to see how many days until the test day
     k = 0
     t_begin = tmax
     round_daily_test_cap_rec = round_daily_test_cap
 
-
-    flag1 = True
+    flag1 = True # this will be false if we start test
+    increasing_phase = True
     for t in range(tmax):
         print('day', t, '=' * 100)
         beta_t = beta(t)
@@ -242,11 +300,15 @@ def SIRsimulation_for_se(N,external_infection_rate=0,test_round=100,
         trajs = calculate_v_load(trajs) # calculate viral load
         # calculate n_star
         print('p=',p_t)
-
-        for _ in range(1):
-            se_d_list, se_p_list, _ = give_se_cpr(trajs.loc[trajs['is_I'] | trajs['is_R'] | trajs['is_S']],
+        # calculate se_d and se_p for all candidate n by simulating group sampling
+        se_d_list, se_p_list, _ = give_se_cpr(trajs.loc[trajs['is_I'] | trajs['is_R'] | trajs['is_S']],
                                                   detectable_load, n_list=n_list)
-            log_se_table.append([p_t]+se_p_list+se_d_list)
+        log_se_table.append([p_t]+se_p_list+se_d_list)
+
+        # see if is increasing or not
+        if t>7:
+            if all([log_se_table[-i][0]>p_t for i in range(1,8)]):
+                increasing_phase = False
 
         if n_star_policy=='daily' or t%n_period==0:
             # we can also simulate the process to compare the result
@@ -263,9 +325,16 @@ def SIRsimulation_for_se(N,external_infection_rate=0,test_round=100,
                     else:
                         cpr_temp[i] = 1. / se_d_list[i] / p_t * (1. / n + se_p_list[i] - (se_p_list[i]+sp-1) * (1 - p_t) ** n)
             n_star_this = n_list_temp[np.argmin(cpr_temp)]
-            n_star = n_star_this
+            if use_table:
 
-
+                if increasing_phase:
+                    idx_closest = np.searchsorted(table_n_star_up.index.values, p_t)
+                    n_star = int(table_n_star_up.iloc[idx_closest]['n_star'])
+                else:
+                    idx_closest = np.searchsorted(table_n_star_down.index.values, p_t)
+                    n_star = int(table_n_star_down.iloc[idx_closest]['n_star'])
+            else:
+                n_star = n_star_this
         if n_star_policy=='fixed':
             n_star = fixed_n
             n_star_this = n_star
@@ -290,16 +359,12 @@ def SIRsimulation_for_se(N,external_infection_rate=0,test_round=100,
                 trajs['period_test_in_days'] = np.random.choice(list(range(period)), trajs.shape[0])
                 np.random.seed(int(time.time() * 1000) % 1000)
                 trajs.loc[~trajs['will_test'],'period_test_in_days'] = big_M
-
             trajs['need_test_today'] = (trajs['period_test_in_days']==0)&(trajs['is_I']|trajs['is_R']|trajs['is_S'])
-
-        # import pdb;
-        # pdb.set_trace()
-
         # step 2. do test
-        test_result, number_of_total_tests, number_of_group_tests, TP,TN,FP,FN = group_test(t,trajs,n_star,daily_test_cap=round_daily_test_cap, test_policy=test_policy)
+        parameters['test_policy'] = test_policy
+        test_result, number_of_total_tests, number_of_group_tests, TP,TN,FP,FN = group_test(trajs,n_star,daily_test_cap=round_daily_test_cap, parameters=parameters)
         # print('number_of_total_tests:',number_of_total_tests,'------------TP:',TP,'--------------FP:',FP,)
-        # step 3. update info, especially day_until_remove
+        # step 3. update info, including day_until_remove
         trajs['get_test'] = False
         trajs['true_positive_ind'] = False
         trajs['get_test'] = test_result['get_test']
@@ -308,9 +373,6 @@ def SIRsimulation_for_se(N,external_infection_rate=0,test_round=100,
         trajs['true_positive_ind'].fillna(False,inplace=True)
         will_be_Q_in_T_lead = trajs['true_positive_ind'] & (trajs['day_until_remove'] == big_M)
         trajs.loc[will_be_Q_in_T_lead, 'day_until_remove'] = T_lead
-        # import pdb; pdb.set_trace()
-
-        # -- update according to SIR --
         # S -> I
         external_number_today = int(N*external_infection_rate) #HYD: external rate
         neg_dS = round(beta_t * S * I / N)+external_number_today   # calculate new infections (-dS) # HYD: external rate
@@ -327,12 +389,9 @@ def SIRsimulation_for_se(N,external_infection_rate=0,test_round=100,
         trajs.loc[is_removed_symptom, 'is_I'] = False
         trajs.loc[is_removed_symptom, 'is_SQ'] = True
 
-        # I,SQ-> Q
+        # I -> Q
         is_removed_from_test = trajs['day_until_remove'] == 0
-        # possible error YJL
         trajs.loc[is_removed_from_test,'day_until_remove'] = big_M
-
-        # assert (1*trajs['is_I'] - 1*is_removed_from_test).min() >= 0
         trajs.loc[trajs['day_until_remove']<big_M,'day_until_remove'] -= 1
         trajs.loc[is_removed_from_test, 'is_I'] = False
         trajs.loc[is_removed_from_test, 'is_SQ'] = False
@@ -347,15 +406,11 @@ def SIRsimulation_for_se(N,external_infection_rate=0,test_round=100,
 
         # continue of step 1, update after the test
         if test_policy == 'round':
-            #print('people need to be test this round', trajs['round_test_needed'].sum())
             trajs.loc[trajs['get_test'], 'round_test_needed'] = False
-            #print('people need to be test this round 2:', trajs['round_test_needed'].sum())
             # if all round_test_needed = False, this round is over and update
             if trajs['round_test_needed'].sum() == 0:
                 # trajs['round_test_needed'] = trajs['will_test']   # & (trajs['is_I'] | trajs['is_S'])
-
                 trajs['round_test_needed'] = trajs['will_test'] & (trajs['is_I'] | trajs['is_R'] | trajs['is_S'])
-
                 print(k, 'old round ended, new round start')
                 k+=1
                 print('k=',k)
@@ -401,308 +456,157 @@ def SIRsimulation_for_se(N,external_infection_rate=0,test_round=100,
 
     return df, df_se_result
 
-# here we have all cpr data
-# df_cpr['n_star'].plot() # draw n star plot here <<<<<
-print('>> n_star curve generated','**'*100)
 
-N=100000
-I0 = int(N//2000)
-capcity = int(N//60)
-tmax=365
-test_round = 10000000
-capcity_antigen = int(N//3)
-t_lead_antigen = 0
-# pay attention to default variables
-# ##########################No testing#########################
-# #
-# result_no_testing = SIRsimulation(N, table_n_star=df_cpr, exp_name='no_testing',
-#                             n_star_policy='fixed',test_policy = 'round', I0=I0, round_daily_test_cap=0,tmax=tmax)
-
-##########################round testing#########################
-#
-#result_ind_round_1delay = SIRsimulation(N, table_n_star=df_cpr, exp_name='individual_round_1delay_0.001',T_lead = 1, test_round = test_round,p_start=0.001,
-#                             n_star_policy='fixed',test_policy = 'round', I0=I0, round_daily_test_cap=capcity,tmax=tmax)
-# #
-#result_nstar7_round_2delay = SIRsimulation(N, table_n_star=df_cpr, exp_name='nstar7_round_2delay_0.001',T_lead = 2,test_round = test_round,p_start=0.001,
-#                            n_star_policy='period',test_policy = 'round', I0=I0,round_daily_test_cap=capcity,tmax=tmax)
-# result_nstar7_round_2delay = SIRsimulation(N, table_n_star=df_cpr, exp_name='nstar7_round_2delay_0.0025',T_lead = 2,test_round = test_round,p_start=0.0025,
-#                             n_star_policy='period',test_policy = 'round', I0=I0,round_daily_test_cap=capcity,tmax=tmax)
-# result_nstar7_round_2delay = SIRsimulation(N, table_n_star=df_cpr, exp_name='nstar7_round_2delay_0.0075',T_lead = 2,test_round = test_round,p_start=0.0075,
-#                             n_star_policy='period',test_policy = 'round', I0=I0,round_daily_test_cap=capcity,tmax=tmax)
-#result_nstar7_round_2delay = SIRsimulation(N, table_n_star=df_cpr, exp_name='nstar7_round_2delay_0.0125',T_lead = 2,test_round = test_round,p_start=0.0125,
-#                             n_star_policy='period',test_policy = 'round', I0=I0,round_daily_test_cap=capcity,tmax=tmax)
-#
-
-import multiprocessing
-cpu_count = multiprocessing.cpu_count()
-import tqdm
-
-def get_results(seed):
+def get_results_no_table(seed_para):
+    N = 100000  # HYD: global parameters
+    I0 = int(N // 2000)
+    capcity = int(N // 60)
+    tmax = 365
+    test_round = 10000000
+    capcity_antigen = int(N // 3)
+    t_lead_antigen = 0
+    seed = seed_para[0]
+    parameter_set = seed_para[1]
     np.random.seed(seed)
-    result_nstar7_round_2delay, result_se = SIRsimulation_for_se(N, exp_name='nstar7_round_2delay_0.01', T_lead=2,
-                                                                 test_round=test_round, p_start=0.001,
+    result_nstar7_round_2delay, result_se = SIRsimulation_for_se(N, parameter_set,
+                                                                 T_lead=parameter_set['t_lead'],n_period=7,
+                                                                 test_round=test_round, p_start=0.01,
                                                                  n_star_policy='period', test_policy='round', I0=I0,
-                                                                 round_daily_test_cap=capcity, tmax=tmax)
+                                                                 round_daily_test_cap=capcity, tmax=tmax, use_table=False)
     max_p_date = result_se['p'].idxmax()
     result_se_up = result_se.loc[:max_p_date]
     result_se_down = result_se.loc[max_p_date:]
     return [result_se_up, result_se_down]
 
 
+def get_results_with_table(seed_para):
+    N = 100000  # HYD: global parameters
+    I0 = int(N // 2000)
+    capcity = int(N // 60)
+    tmax = 365
+    test_round = 10000000
+    capcity_antigen = int(N // 3)
+    t_lead_antigen = 0
+    seed = seed_para[0]
+    parameter_set = seed_para[1]
+    up_table = seed_para[2]
+    down_table = seed_para[3]
+    exp_name = seed_para[4]
+    np.random.seed(seed)
+    result_record, result_se = SIRsimulation_for_se(N, parameter_set,table_n_star_up=up_table, table_n_star_down=down_table,
+                                                                 T_lead=parameter_set['t_lead'], n_period=7,
+                                                                 test_round=test_round, p_start=0.01,
+                                                                 n_star_policy='period', test_policy='round', I0=I0,
+                                                                 round_daily_test_cap=capcity, tmax=tmax,
+                                                                 use_table=True)
+    max_p_date = result_se['p'].idxmax()
+    result_se_up = result_se.loc[:max_p_date]
+    result_se_down = result_se.loc[max_p_date:]
+    result_record.to_csv(exp_name+'_record.csv')
+    result_se.to_csv(exp_name+'_se.csv')
+    return result_record, result_se_up, result_se_down
+
+
+def lowess_data(n_list, df_se, suffix='sep'):
+    # fit curve se
+    for n in n_list:
+        x = df_se['p'].values
+        y = df_se[suffix+str(n)].values
+        z = lowess(y, x, return_sorted=False, frac=1. / 3)
+        z[z > 1.] = 1.
+        df_se[suffix + str(n) + '_lws'] = z
+    return df_se
+
+
+def get_n_star(df_se, n_list, sp):
+    n_test = df_se.shape[0]
+    cpr_matrix = np.zeros((n_test, len(n_list)))
+    for i, n in enumerate(n_list):
+        if n == 1:
+            cpr_matrix[:, 0] = 1. / df_se['sed'+str(n) + '_lws'].values / df_se['p'].values
+        else:
+            se_vect = df_se['sep'+str(n) + '_lws'].values
+            se_all_vect = df_se['sed'+str(n) + '_lws'].values
+            p_vect = df_se['p'].values
+            # cpr_matrix[:,i] = 1. / se_vect / df_se['1_lws'].values / p_vect * (1. / n + se_vect - (se_vect+sp-1) * (1 - p_vect) ** n)
+            cpr_matrix[:, i] = 1. / se_all_vect / p_vect * (1. / n + se_vect - (se_vect + sp - 1) * (1 - p_vect) ** n)
+    df_cpr = pd.DataFrame(cpr_matrix, columns=n_list)
+    df_cpr['p'] = df_se['p']
+    df_cpr.set_index('p', inplace=True)
+    df_cpr['n_star'] = df_cpr.idxmin(axis=1)
+    return df_cpr
+
+
+
 if __name__=='__main__':
+
+    # task 1: estimate sep/sed for pcr
     all_results = []
-    seeds = [i for i in range(cpu_count)]
-
-#    all_results = [get_results(1)]
-
+    parameter_set = {'LOD': 2, 'n_list': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 25, 30], 'sp': 0.986,'t_lead':2}
+    seed_params = [[i, parameter_set] for i in range(cpu_count)]
     with multiprocessing.Pool(cpu_count) as pool:
-        for result in tqdm.tqdm(pool.imap_unordered(get_results, seeds), total=len(seeds)):
+        for result in tqdm.tqdm(pool.imap_unordered(get_results_no_table, seed_params), total=len(seed_params)):
             all_results.append(result)
     se_up_all = []
     se_down_all = []
-    for i in range(2):
+    for i in range(cpu_count):
         se_up_all.append(all_results[i][0])
         se_down_all.append(all_results[i][1])
     se_up_all = pd.concat(se_up_all)
     se_down_all = pd.concat(se_down_all)
     se_up_all.sort_values('p',inplace=True)
     se_down_all.sort_values('p',inplace=True)
-
-
-    #for n in n_list:
-    #    plt.scatter(se_up_all['p'], se_up_all['sep{0}'.format(n)], label=n)
-    #plt.legend()
-    def lowess_data(n_list, df_se, suffix='sep'):
-        # fit curve se
-        for n in n_list:
-            x = df_se['p'].values
-            y = df_se[suffix+str(n)].values
-            z = lowess(y, x, return_sorted=False, frac=1. / 3)
-            z[z > 1.] = 1.
-            df_se[suffix + str(n) + '_lws'] = z
-            # if n in list(color_table.keys()):
-            # plt.scatter(x,y,alpha=0.4,color=color_table[n])
-            #    plt.plot(x,z,color =color_table[n],label=n)
-        # plt.legend()
-        return df_se
-
+    n_list = parameter_set['n_list']
     se_up_all = lowess_data(n_list, se_up_all, 'sep')
     se_up_all = lowess_data(n_list, se_up_all, 'sed')
     se_down_all = lowess_data(n_list, se_down_all, 'sep')
     se_down_all = lowess_data(n_list, se_down_all, 'sed')
+    se_up_all.to_csv('100_pcr_se_up.csv')
+    se_down_all.to_csv('100_pcr_se_down.csv')
+    # task 2: estimate sep/sed for antigen
+    all_results = []
+    # # set 2: pcr
+    parameter_set = {'LOD':5, 'n_list':[1],'sp':0.984,'t_lead':0}
+    seed_params = [[i, parameter_set] for i in range(cpu_count)]
+    with multiprocessing.Pool(cpu_count) as pool:
+        for result in tqdm.tqdm(pool.imap_unordered(get_results_no_table, seed_params), total=len(seed_params)):
+            all_results.append(result)
+    se_up_all = []
+    se_down_all = []
+    for i in range(cpu_count):
+        se_up_all.append(all_results[i][0])
+        se_down_all.append(all_results[i][1])
+    se_up_all = pd.concat(se_up_all)
+    se_down_all = pd.concat(se_down_all)
+    se_up_all.sort_values('p', inplace=True)
+    se_down_all.sort_values('p', inplace=True)
+    n_list = parameter_set['n_list']
+    se_up_all = lowess_data(n_list, se_up_all, 'sep')
+    se_up_all = lowess_data(n_list, se_up_all, 'sed')
+    se_down_all = lowess_data(n_list, se_down_all, 'sep')
+    se_down_all = lowess_data(n_list, se_down_all, 'sed')
+    se_up_all.to_csv('100_antigen_se_up.csv')
+    se_down_all.to_csv('100_antigen_se_down.csv')
 
-    for n in n_list:
-       plt.plot(se_up_all['p'], se_up_all['sed{0}_lws'.format(n)], label=n)
-    plt.legend()
+    # task 3: generate n star table for pcr and antigen
+    se_up_pcr = pd.read_csv('100_pcr_se_up.csv')
+    se_down_pcr = pd.read_csv('100_pcr_se_down.csv')
+    se_up_antigen = pd.read_csv('100_antigen_se_up.csv')
+    se_down_antigen = pd.read_csv('100_antigen_se_down.csv')
 
-    se_up_all.to_csv('exp100_adaptive_se_up.csv')
-    se_down_all.to_csv('exp100_adaptive_se_down.csv')
+    parameter_set_pcr = {'LOD': 2, 'n_list': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 25, 30], 'sp': 0.986, 't_lead': 2}
+    parameter_set_antigen = {'LOD': 5, 'n_list': [1], 'sp': 0.984, 't_lead': 0}
+    se_up_pcr = get_n_star(se_up_pcr,parameter_set_pcr['n_list'], parameter_set_pcr['sp'])
+    se_down_pcr = get_n_star(se_down_pcr,parameter_set_pcr['n_list'], parameter_set_pcr['sp'])
+    seed_params_pcr = [0, parameter_set_pcr, se_up_pcr, se_down_pcr,'pcr_test']
+    result_record, result_se_up, result_se_down = get_results_with_table(seed_params_pcr)
 
-
-se_up_a = pd.read_csv('exp100_adaptive_se_up.csv')
-se_up_b = pd.read_csv('exp3_adaptive_se_up.csv')
-
-plt.scatter(se_up_b['p'],se_up_b['sed10'],label='100')
-plt.scatter(se_up_a['p'],se_up_a['sed10'],label='1000')
-
-
-#
-#
-# result_ind_round_1delay = SIRsimulation(N, table_n_star=df_cpr, exp_name='individual_round_1delay_0.0025',T_lead = 1, test_round = test_round,p_start=0.0025,
-#                             n_star_policy='fixed',test_policy = 'round', I0=I0, round_daily_test_cap=capcity,tmax=tmax)
-#
-#
-# result_ind_round_1delay = SIRsimulation(N, table_n_star=df_cpr, exp_name='individual_round_1delay_0.0075',T_lead = 1, test_round = test_round,p_start=0.0075,
-#                             n_star_policy='fixed',test_policy = 'round', I0=I0, round_daily_test_cap=capcity,tmax=tmax)
-#
-# result_ind_round_1delay = SIRsimulation(N, table_n_star=df_cpr, exp_name='individual_round_1delay_0.0125',T_lead = 1, test_round = test_round,p_start=0.0125,
-#                             n_star_policy='fixed',test_policy = 'round', I0=I0, round_daily_test_cap=capcity,tmax=tmax)
-#
-# result_ind_round_1delay = SIRsimulation(N, table_n_star=df_cpr, exp_name='individual_round_1delay_0.015',T_lead = 1, test_round = test_round,p_start=0.015,
-#                             n_star_policy='fixed',test_policy = 'round', I0=I0, round_daily_test_cap=capcity,tmax=tmax)
-
-
-########################################
-#result_antigen_round_3day = SIRsimulation(N, table_n_star=df_cpr, exp_name='antigen_individual_round_3day_0.0025',T_lead = 0, test_round = test_round,p_start=0.0025,
-#                            n_star_policy='fixed',test_policy = 'round', I0=I0, round_daily_test_cap=int(N//3),tmax=tmax)
-
-# result_antigen_round_3day = SIRsimulation(N, table_n_star=df_cpr, exp_name='antigen_individual_round_3day_0.0075',T_lead = 0, test_round = test_round,p_start=0.0075,
-#                             n_star_policy='fixed',test_policy = 'round', I0=I0, round_daily_test_cap=int(N//3),tmax=tmax)
-# result_antigen_round_3day = SIRsimulation(N, table_n_star=df_cpr, exp_name='antigen_individual_round_3day_0.0125',T_lead = 0, test_round = test_round,p_start=0.0125,
-#                             n_star_policy='fixed',test_policy = 'round', I0=I0, round_daily_test_cap=int(N//3),tmax=tmax)
-#
-# result_antigen_round_3day = SIRsimulation(N, table_n_star=df_cpr, exp_name='antigen_individual_round_3day_0.015',T_lead = 0, test_round = test_round,p_start=0.015,
-#                             n_star_policy='fixed',test_policy = 'round', I0=I0, round_daily_test_cap=int(N//3),tmax=tmax)
-#########################################
-
-
-############################################
-#
-#result_antigen_round_14day = SIRsimulation(N, table_n_star=df_cpr, exp_name='antigen_individual_round_14day_0.0025',T_lead = 0, test_round = test_round,p_start=0.0025,
-#                            n_star_policy='fixed',test_policy = 'round', I0=I0, round_daily_test_cap=int(N//14),tmax=tmax)
-
-# result_antigen_round_14day = SIRsimulation(N, table_n_star=df_cpr, exp_name='antigen_individual_round_14day_0.0075',T_lead = 0, test_round = test_round,p_start=0.0075,
-#                             n_star_policy='fixed',test_policy = 'round', I0=I0, round_daily_test_cap=int(N//14),tmax=tmax)
-# result_antigen_round_14day = SIRsimulation(N, table_n_star=df_cpr, exp_name='antigen_individual_round_14day_0.0125',T_lead = 0, test_round = test_round,p_start=0.0125,
-#                             n_star_policy='fixed',test_policy = 'round', I0=I0, round_daily_test_cap=int(N//14),tmax=tmax)
-#
-# result_antigen_round_14day = SIRsimulation(N, table_n_star=df_cpr, exp_name='antigen_individual_round_14day_0.015',T_lead = 0, test_round = test_round,p_start=0.015,
-#                             n_star_policy='fixed',test_policy = 'round', I0=I0, round_daily_test_cap=int(N//14),tmax=tmax)
-
-#
-#
-# ####################################################
-
-# result_ind_round_1delay = SIRsimulation(N, table_n_star=df_cpr, exp_name='individual_round_1delay_0.005',T_lead = 1, test_round = test_round,p_start=0.005,
-#                             n_star_policy='fixed',test_policy = 'round', I0=I0, round_daily_test_cap=capcity,tmax=tmax)
-#
-#
-# result_nstar7_round_2delay = SIRsimulation(N, table_n_star=df_cpr, exp_name='nstar7_round_2delay_0.005',T_lead = 2,test_round = test_round,p_start=0.005,
-#                             n_star_policy='period',test_policy = 'round', I0=I0,round_daily_test_cap=capcity,tmax=tmax)
-
-
-#
-# result_ind_round_1delay = SIRsimulation(N, table_n_star=df_cpr, exp_name='individual_round_1delay_0.01',T_lead = 1, test_round = test_round,p_start=0.01,
-#                             n_star_policy='fixed',test_policy = 'round', I0=I0, round_daily_test_cap=capcity,tmax=tmax)
-#
-#
-# result_nstar7_round_2delay = SIRsimulation(N, table_n_star=df_cpr, exp_name='nstar7_round_2delay_0.01',T_lead = 2,test_round = test_round,p_start=0.01,
-#                             n_star_policy='period',test_policy = 'round', I0=I0,round_daily_test_cap=capcity,tmax=tmax)
+    se_up_antigen = get_n_star(se_up_antigen,parameter_set_antigen['n_list'], parameter_set_antigen['sp'])
+    se_down_antigen = get_n_star(se_down_antigen,parameter_set_antigen['n_list'], parameter_set_antigen['sp'])
+    seed_params_antigen = [0, parameter_set_pcr, se_up_antigen, se_down_antigen,'antigen_test']
+    result_record_antigen, result_se_up_antigen, result_se_down_antigen = get_results_with_table(seed_params_antigen)
+    
+    
 
 
 
-
-
-
-
-# result_antigen_round_3day = SIRsimulation(N, table_n_star=df_cpr, exp_name='antigen_individual_round_3day_0.001',T_lead = 0, test_round = test_round,p_start=0.001,
-#                             n_star_policy='fixed',test_policy = 'round', I0=I0, round_daily_test_cap=int(N//3),tmax=tmax)
-#
-# result_antigen_round_3day = SIRsimulation(N, table_n_star=df_cpr, exp_name='antigen_individual_round_3day_0.005',T_lead = 0, test_round = test_round,p_start=0.005,
-#                             n_star_policy='fixed',test_policy = 'round', I0=I0, round_daily_test_cap=int(N//3),tmax=tmax)
-#
-# result_antigen_round_3day = SIRsimulation(N, table_n_star=df_cpr, exp_name='antigen_individual_round_3day_0.01',T_lead = 0, test_round = test_round,p_start=0.01,
-#                             n_star_policy='fixed',test_policy = 'round', I0=I0, round_daily_test_cap=int(N//3),tmax=tmax)
-#
-# result_antigen_round_14day = SIRsimulation(N, table_n_star=df_cpr, exp_name='antigen_individual_round_14day_0.001',T_lead = 0, test_round = test_round,p_start=0.001,
-#                             n_star_policy='fixed',test_policy = 'round', I0=I0, round_daily_test_cap=int(N//14),tmax=tmax)
-#
-# result_antigen_round_14day = SIRsimulation(N, table_n_star=df_cpr, exp_name='antigen_individual_round_14day_0.005',T_lead = 0, test_round = test_round,p_start=0.005,
-#                             n_star_policy='fixed',test_policy = 'round', I0=I0, round_daily_test_cap=int(N//14),tmax=tmax)
-#
-# result_antigen_round_14day = SIRsimulation(N, table_n_star=df_cpr, exp_name='antigen_individual_round_14day_0.01',T_lead = 0, test_round = test_round,p_start=0.01,
-#                             n_star_policy='fixed',test_policy = 'round', I0=I0, round_daily_test_cap=int(N//14),tmax=tmax)
-#
-#
-
-
-# result_antigen_round_7day = SIRsimulation(N, table_n_star=df_cpr, exp_name='antigen_individual_round_7day',T_lead = 0, test_round = test_round,
-#                             n_star_policy='fixed',test_policy = 'round', I0=I0, round_daily_test_cap=int(N//7),tmax=tmax)
-#
-# result_antigen_round_14day = SIRsimulation(N, table_n_star=df_cpr, exp_name='antigen_individual_round_14day_p_start0.005',T_lead = 0, test_round = test_round,p_start=0.005,
-#                             n_star_policy='fixed',test_policy = 'round', I0=I0, round_daily_test_cap=int(N//14),tmax=tmax)
-#
-# result_antigen_round_14day = SIRsimulation(N, table_n_star=df_cpr, exp_name='antigen_individual_round_14day',T_lead = 0, test_round = test_round,
-#                             n_star_policy='fixed',test_policy = 'round', I0=I0, round_daily_test_cap=int(N//14),tmax=tmax)
-
-
-
-
-
-
-# result_antigen_round_1day = SIRsimulation(N, table_n_star=df_cpr, exp_name='antigen_individual_round_1day',T_lead = 0, test_round = test_round,
-#                             n_star_policy='fixed',test_policy = 'round', I0=I0, round_daily_test_cap=int(N//1),tmax=tmax)
-
-# result_antigen_round_14day = SIRsimulation(N, table_n_star=df_cpr, exp_name='antigen_individual_round_14day',T_lead = 0, test_round = test_round,
-#                             n_star_policy='fixed',test_policy = 'round', I0=I0, round_daily_test_cap=int(N//14),tmax=tmax)
-
-# result_antigen_round_3day = SIRsimulation(N, table_n_star=df_cpr, exp_name='antigen_individual_round_0delay',T_lead = t_lead_antigen, test_round = test_round,
-#                             n_star_policy='fixed',test_policy = 'round', I0=I0, round_daily_test_cap=capcity_antigen,tmax=tmax)
-
-
-
-# result_nstar7_round_1delay = SIRsimulation(N, table_n_star=df_cpr, exp_name='nstar7_round_1delay',T_lead = t_lead,test_round = test_round,
-#                             n_star_policy='period',test_policy = 'round', I0=I0,round_daily_test_cap=capcity,tmax=tmax)
-
-# result_nstar7_period_2delay = SIRsimulation(N, table_n_star=df_cpr, exp_name='nstar7_round_2delay',T_lead = 2, test_round = test_round,
-#                             n_star_policy='period',test_policy = 'round',I0=I0,round_daily_test_cap=capcity,tmax=tmax)
-#
-# result_nstar1_round = SIRsimulation(N, table_n_star=df_cpr, exp_name='nstar1_round_1delay',T_lead = t_lead,test_round = test_round,
-#                             n_star_policy='daily',test_policy = 'round', I0=I0,round_daily_test_cap=capcity,tmax=tmax)
-# ##########################periodical testing#########################
-#
-# result_ind_period_1delay = SIRsimulation(N, table_n_star=df_cpr, exp_name='individual_periodical_1delay',T_lead = 1,
-#                             n_star_policy='fixed',test_policy = 'periodical', I0=I0,tmax=tmax)
-#
-#
-# result_ind_period_2delay = SIRsimulation(N, table_n_star=df_cpr, exp_name='individual_periodical_2delay',T_lead = 2,
-#                             n_star_policy='fixed',test_policy = 'periodical', I0=I0,tmax=tmax)
-#
-# result_nstar7_period_0delay = SIRsimulation(N, table_n_star=df_cpr, exp_name='nstar7_periodical_0delay',T_lead = 0,
-#                             n_star_policy='period',test_policy = 'periodical',I0=I0,tmax=tmax)
-
-# result_nstar7_period_1delay = SIRsimulation(N, table_n_star=df_cpr, exp_name='nstar7_periodical_1delay',T_lead = 1,
-#                             n_star_policy='period',test_policy = 'periodical',I0=I0,tmax=tmax)
-# #
-# result_nstar7_period_2delay = SIRsimulation(N, table_n_star=df_cpr, exp_name='nstar7_periodical_2delay',T_lead = 2,
-#                             n_star_policy='period',test_policy = 'periodical',I0=I0,tmax=tmax)
-
-# #######################Antigen need change VL in our simulation###############
-# result_antigen_ind_period = SIRsimulation(N, table_n_star=df_cpr, exp_name='antigen_individual_periodical_0delay_7VL',T_lead = 0,
-#                             n_star_policy='fixed',test_policy = 'periodical', I0=I0,tmax=tmax)
-# result_antigen_ind_period = SIRsimulation(N, table_n_star=df_cpr, exp_name='antigen_individual_periodical_1delay',T_lead = 1,
-#                             n_star_policy='fixed',test_policy = 'periodical', I0=I0,tmax=tmax)
-# result_antigen_ind_period = SIRsimulation(N, table_n_star=df_cpr, exp_name='antigen_individual_periodical_2delay',T_lead = 2,
-#                             n_star_policy='fixed',test_policy = 'periodical', I0=I0,tmax=tmax)
-
-
-"""
-result_ind_round = SIRsimulation(N, table_n_star=df_cpr, exp_name='individual_round',
-                            n_star_policy='fixed',test_policy = 'round', I0=I0, round_daily_test_cap=capcity,tmax=tmax)
-
-result_nstar1_period = SIRsimulation(N, table_n_star=df_cpr, exp_name='nstar1_periodical',
-                            n_star_policy='daily',test_policy = 'periodical',I0=I0,tmax=tmax)
-
-result_nstar1_round = SIRsimulation(N, table_n_star=df_cpr, exp_name='nstar1_round',
-                            n_star_policy='daily',test_policy = 'round', I0=I0,round_daily_test_cap=capcity,tmax=tmax)
-
-result_nstar7_period = SIRsimulation(N, table_n_star=df_cpr, exp_name='nstar7_periodical',
-                            n_star_policy='period',test_policy = 'periodical',I0=I0,tmax=tmax)
-
-result_nstar7_round = SIRsimulation(N, table_n_star=df_cpr, exp_name='nstar7_round',
-                            n_star_policy='period',test_policy = 'round', I0=I0,round_daily_test_cap=capcity,tmax=tmax)
-
-
-"""
-
-
-# def plot_curve(col,is_cum,fig_number,title):
-#     plt.figure(fig_number)
-#     if is_cum:
-#         plt.plot(result_ind_round[col].cumsum(), label='individual, round')
-#         plt.plot(result_nstar1_round[col].cumsum(), label='n1, round')
-#         #plt.plot(result_nstar7_round[col].cumsum(), label='n7, round')
-#         plt.plot(result_ind_period[col].cumsum(), label='individual, period')
-#         plt.plot(result_nstar1_period[col].cumsum(), label='n1, period')
-#        # plt.plot(result_nstar7_period[col].cumsum(), label='n7, period')
-#     else:
-#         plt.plot(result_ind_round[col], label='individual, round')
-#         plt.plot(result_nstar1_round[col], label='n1, round')
-#         #plt.plot(result_nstar7_round[col], label='n7, round')
-#         plt.plot(result_ind_period[col], label='individual, period')
-#         plt.plot(result_nstar1_period[col], label='n1, period')
-#         #plt.plot(result_nstar7_period[col], label='n7, period')
-#     plt.legend()
-#     plt.title(title)
-#     plt.show()
-# #result_ind_period[['S','I','R','SQ','Q']].plot()
-# #plt.show()
-#
-# plot_curve('S',False,0,'S')
-# plot_curve('I',False,1,'I')
-# plot_curve('n_star',False,2,'N')
-# plot_curve('TP',True,3,'TP')
-# plot_curve('FP',True,4,'FP')
-# plot_curve('TN',True,5,'TN')
-# plot_curve('FN',True,6,'FN')
-# plot_curve('FP',False,7,'FP(t)')
