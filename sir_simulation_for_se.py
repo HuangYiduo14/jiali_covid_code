@@ -24,7 +24,7 @@ EPS = 1e-12
 
 # # set 2: pcr
 #
-detectable_load = 3
+detectable_load = 2
 n_list = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 25, 30]
 df_se = pd.read_csv('se_p_pcr_data.csv')
 df_all_se  = pd.read_csv('se_d_pcr_data.csv')
@@ -225,6 +225,8 @@ def SIRsimulation_for_se(N,external_infection_rate=0,test_round=100,
     t_begin = tmax
     round_daily_test_cap_rec = round_daily_test_cap
 
+
+    flag1 = True
     for t in range(tmax):
         print('day', t, '=' * 100)
         beta_t = beta(t)
@@ -237,8 +239,6 @@ def SIRsimulation_for_se(N,external_infection_rate=0,test_round=100,
             p_t = I / (I+S+R)
         else:
             p_t = 0
-        #print('S:', S, ', I:', I, ', R:', R, ', Q:', Q, ', SQ:', SQ,'R+Q+SQ:',R+Q+SQ)
-        # assert S + R + I+Q+SQ == trajs.shape[0]
         trajs = calculate_v_load(trajs) # calculate viral load
         # calculate n_star
         print('p=',p_t)
@@ -252,10 +252,16 @@ def SIRsimulation_for_se(N,external_infection_rate=0,test_round=100,
             # we can also simulate the process to compare the result
             n_list_temp= n_list
             cpr_temp = np.zeros_like(n_list_temp)
-            cpr_temp[0] = 1./se_p_list[0]/p_t
+            if se_d_list[0] < EPS or p_t < EPS:
+                cpr_temp[0] = 0
+            else:
+                cpr_temp[0] = 1./se_p_list[0]/p_t
             for i,n in enumerate(n_list_temp):
                 if n>1:
-                    cpr_temp[i] = 1. / se_d_list[i] / p_t * (1. / n + se_p_list[i] - (se_p_list[i]+sp-1) * (1 - p_t) ** n)
+                    if se_d_list[i]<EPS or p_t< EPS:
+                        cpr_temp[i] = 0
+                    else:
+                        cpr_temp[i] = 1. / se_d_list[i] / p_t * (1. / n + se_p_list[i] - (se_p_list[i]+sp-1) * (1 - p_t) ** n)
             n_star_this = n_list_temp[np.argmin(cpr_temp)]
             n_star = n_star_this
 
@@ -266,7 +272,7 @@ def SIRsimulation_for_se(N,external_infection_rate=0,test_round=100,
         # -- do test --
         # step 1. identify the people that 'need_test_today' according to different policies
         if test_policy=='round':
-            if ((I / N) < p_start) & (t <= t_begin):
+            if ((I / N) < p_start) & (t <= t_begin) & flag1:
                 print('-------------------test not start-------------------')
                 round_daily_test_cap = 0
             elif (I == 0):
@@ -274,22 +280,16 @@ def SIRsimulation_for_se(N,external_infection_rate=0,test_round=100,
                 break
             else:
                 print('------------test today--------------------')
+                flag1 = False
                 round_daily_test_cap = round_daily_test_cap_rec
 
             trajs['need_test_today'] = trajs['round_test_needed']
         else:
             if t%period==0: # if is the first day of period, assign people to a random day
-                # HYD 0723
                 np.random.seed(0)
                 trajs['period_test_in_days'] = np.random.choice(list(range(period)), trajs.shape[0])
-                # HYD 0723
                 np.random.seed(int(time.time() * 1000) % 1000)
-
                 trajs.loc[~trajs['will_test'],'period_test_in_days'] = big_M
-
-            # YJL possible error
-            # trajs['need_test_today'] = (trajs['period_test_in_days']==0)
-            #                            # &(trajs['is_I']|trajs['is_S'])
 
             trajs['need_test_today'] = (trajs['period_test_in_days']==0)&(trajs['is_I']|trajs['is_R']|trajs['is_S'])
 
@@ -360,9 +360,6 @@ def SIRsimulation_for_se(N,external_infection_rate=0,test_round=100,
                 k+=1
                 print('k=',k)
             else:
-                # trajs['round_test_needed'] = trajs['round_test_needed']
-        #                 #                              # & ( trajs['is_I'] | trajs['is_S'])
-
                 trajs['round_test_needed'] = trajs['round_test_needed'] & (
                             trajs['is_I'] | trajs['is_R'] | trajs['is_S'])
         else:
@@ -382,20 +379,13 @@ def SIRsimulation_for_se(N,external_infection_rate=0,test_round=100,
         #             'n_star', 'number_of_group_tests', 'TP', 'TN', 'FP', 'FN', 'n_star_by_sim', 'mean_day', 'std_day']
         #print(S,I,R,Q,SQ,trajs['get_test'].sum(),trajs['true_positive_ind'].sum(),number_of_total_tests,n_star,number_of_group_tests,TP,TN,FP,FN,file=file_log)
         log_exp_table.append([S,I,R,Q,SQ,trajs['get_test'].sum(),trajs['true_positive_ind'].sum(),number_of_total_tests,n_star,number_of_group_tests,TP,TN,FP,FN,n_star_this,mean_day,std_day])
-        # trajs.to_csv('trajs%d.csv' % t)
-
-        # file_log.flush()
-    # file_log.close()
-
         # control test round
         if test_policy == 'round':
             if (k == test_round):
                 print('end test')
                 break
 
-
     df = pd.DataFrame(log_exp_table,columns=col_names)
-
     df['day'] = df.index
     df['PPV'] = df['TP'] / (df['TP'] + df['FP'])
     df['NPV'] = df['TN'] / (df['TN'] + df['FN'])
@@ -416,7 +406,7 @@ def SIRsimulation_for_se(N,external_infection_rate=0,test_round=100,
 print('>> n_star curve generated','**'*100)
 
 N=100000
-I0 = int(N//200)
+I0 = int(N//2000)
 capcity = int(N//60)
 tmax=365
 test_round = 10000000
@@ -450,7 +440,7 @@ import tqdm
 def get_results(seed):
     np.random.seed(seed)
     result_nstar7_round_2delay, result_se = SIRsimulation_for_se(N, exp_name='nstar7_round_2delay_0.01', T_lead=2,
-                                                                 test_round=test_round, p_start=0.01,
+                                                                 test_round=test_round, p_start=0.001,
                                                                  n_star_policy='period', test_policy='round', I0=I0,
                                                                  round_daily_test_cap=capcity, tmax=tmax)
     max_p_date = result_se['p'].idxmax()
@@ -461,25 +451,59 @@ def get_results(seed):
 
 if __name__=='__main__':
     all_results = []
-    seeds = [1]
+    seeds = [i for i in range(cpu_count)]
 
-    all_results = [get_results(1)]
+#    all_results = [get_results(1)]
 
-    #with multiprocessing.Pool(cpu_count) as pool:
-    #    for result in tqdm.tqdm(pool.imap_unordered(get_results, seeds), total=len(seeds)):
-    #        all_results.append(result)
+    with multiprocessing.Pool(cpu_count) as pool:
+        for result in tqdm.tqdm(pool.imap_unordered(get_results, seeds), total=len(seeds)):
+            all_results.append(result)
     se_up_all = []
     se_down_all = []
-    for i in range(10):
+    for i in range(2):
         se_up_all.append(all_results[i][0])
         se_down_all.append(all_results[i][1])
     se_up_all = pd.concat(se_up_all)
     se_down_all = pd.concat(se_down_all)
+    se_up_all.sort_values('p',inplace=True)
+    se_down_all.sort_values('p',inplace=True)
+
+
+    #for n in n_list:
+    #    plt.scatter(se_up_all['p'], se_up_all['sep{0}'.format(n)], label=n)
+    #plt.legend()
+    def lowess_data(n_list, df_se, suffix='sep'):
+        # fit curve se
+        for n in n_list:
+            x = df_se['p'].values
+            y = df_se[suffix+str(n)].values
+            z = lowess(y, x, return_sorted=False, frac=1. / 3)
+            z[z > 1.] = 1.
+            df_se[suffix + str(n) + '_lws'] = z
+            # if n in list(color_table.keys()):
+            # plt.scatter(x,y,alpha=0.4,color=color_table[n])
+            #    plt.plot(x,z,color =color_table[n],label=n)
+        # plt.legend()
+        return df_se
+
+    se_up_all = lowess_data(n_list, se_up_all, 'sep')
+    se_up_all = lowess_data(n_list, se_up_all, 'sed')
+    se_down_all = lowess_data(n_list, se_down_all, 'sep')
+    se_down_all = lowess_data(n_list, se_down_all, 'sed')
 
     for n in n_list:
-        plt.scatter(se_up_all['p'], se_up_all['sep{0}'.format(n)], label=n)
+       plt.plot(se_up_all['p'], se_up_all['sed{0}_lws'.format(n)], label=n)
     plt.legend()
 
+    se_up_all.to_csv('exp100_adaptive_se_up.csv')
+    se_down_all.to_csv('exp100_adaptive_se_down.csv')
+
+
+se_up_a = pd.read_csv('exp100_adaptive_se_up.csv')
+se_up_b = pd.read_csv('exp3_adaptive_se_up.csv')
+
+plt.scatter(se_up_b['p'],se_up_b['sed10'],label='100')
+plt.scatter(se_up_a['p'],se_up_a['sed10'],label='1000')
 
 
 #

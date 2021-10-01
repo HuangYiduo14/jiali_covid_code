@@ -61,7 +61,7 @@ def CPR_group_test(df_trajs, detectable_load, n, save_vl = False):
     total_patient_found = df_v_load['test_positive_ind'].sum()
 
     if total_tested_infected == 0:
-        return df_v_load,None,None,vl
+        return df_v_load,0,0,vl
     se_d = total_patient_found / total_tested_infected
 
     # note that cpr and se are not limited by the capacity, here we calculate over all population
@@ -69,14 +69,14 @@ def CPR_group_test(df_trajs, detectable_load, n, save_vl = False):
     total_test_out_group = df_group_vl['test_positive_group'].sum()
 
     if total_infected_group < EPS:
-        se_p = None
+        se_p = 0
     else:
         se_p = total_test_out_group / total_infected_group
     if n==1:
         assert abs(se_p-se_d)<EPS
 
-    if se_p >0.8:
-        import pdb; pdb.set_trace()
+    #if se_p >0.8:
+    #    import pdb; pdb.set_trace()
     return df_v_load, se_p, se_d, vl
 
 
