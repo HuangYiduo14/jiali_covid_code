@@ -9,7 +9,7 @@ cpu_count = multiprocessing.cpu_count()
 lowess = sm.nonparametric.lowess
 big_M = 999
 EPS = 1e-12
-
+interested_percentiles = [0,15,25,50,75,85,100]
 
 # revision 2: we will use tg as t00,
 def get_mcmc_result():
@@ -201,7 +201,17 @@ def group_test(df_trajs, n, daily_test_cap, parameters):
     FN = (df_v_load['get_test'] & df_v_load['is_I'] & (~df_v_load['test_positive_ind'])).sum()
     number_of_total_tests = (df_group_vl['number_of_test_group'] * df_group_vl['get_test']).sum()
     number_of_group_tests = df_group_vl['get_test'].sum()
-    return df_v_load, number_of_total_tests, number_of_group_tests, TP, TN, FP, FN
+    #import pdb; pdb.set_trace()
+    v_load_vec = df_v_load.loc[df_v_load['is_I'],'log10vload'].values
+    if len(v_load_vec)==0:
+        percentiles = [0 for _ in interested_percentiles]
+        v_mean = v_std = 0
+    else:
+        percentiles = np.percentile(v_load_vec, interested_percentiles)
+        v_mean = np.mean(v_load_vec)
+        v_std = np.std(v_load_vec)
+
+    return df_v_load, number_of_total_tests, number_of_group_tests, TP, TN, FP, FN, percentiles, v_mean, v_std
 
 
 # first we consider SIR model
@@ -245,7 +255,8 @@ def SIRsimulation_for_se(N, parameters, table_n_star_up=None, table_n_star_down=
         'S, I, R, Q, SQ, total_tested_individual, positive_results, number_of_total_tests, n_star, number_of_group_tests, TP,TN,FP,FN')
     # initialize record table, we will add one row each day
     col_names = ['S', 'I', 'R', 'Q', 'SQ', 'total_tested_individual', 'positive_results', 'number_of_total_tests',
-                 'n_star', 'number_of_group_tests', 'TP', 'TN', 'FP', 'FN', 'n_star_by_sim', 'mean_day', 'is_increasing']
+                 'n_star', 'number_of_group_tests', 'TP', 'TN', 'FP', 'FN', 'n_star_by_sim', 'mean_day', 'is_increasing','v_mean','v_std'
+                 ]+list(['v_pt_'+str(pt) for pt in interested_percentiles])
     log_exp_table = []
     log_se_table = []
     se_col_names = ['p'] + ['sep{0}'.format(n) for n in n_list] + ['sed{0}'.format(n) for n in n_list]
@@ -383,7 +394,7 @@ def SIRsimulation_for_se(N, parameters, table_n_star_up=None, table_n_star_down=
                         trajs['is_I'] | trajs['is_R'] | trajs['is_S'])
         # step 2. do test
         parameters['test_policy'] = test_policy
-        test_result, number_of_total_tests, number_of_group_tests, TP, TN, FP, FN = group_test(trajs, n_star,
+        test_result, number_of_total_tests, number_of_group_tests, TP, TN, FP, FN, v_percentiles, v_mean, v_std = group_test(trajs, n_star,
                                                                                                daily_test_cap=round_daily_test_cap,
                                                                                                parameters=parameters)
         # print('number_of_total_tests:',number_of_total_tests,'------------TP:',TP,'--------------FP:',FP,)
@@ -455,11 +466,11 @@ def SIRsimulation_for_se(N, parameters, table_n_star_up=None, table_n_star_down=
         trajs.loc[trajs['is_SQ'], 'day'] += 1
 
         # col_names = ['S', 'I', 'R', 'Q', 'SQ', 'total_tested_individual', 'positive_results', 'number_of_total_tests',
-        #             'n_star', 'number_of_group_tests', 'TP', 'TN', 'FP', 'FN', 'n_star_by_sim', 'mean_day', 'is_increasing']
+        #             'n_star', 'number_of_group_tests', 'TP', 'TN', 'FP', 'FN', 'n_star_by_sim', 'mean_day', 'is_increasing','v_mean','v_std', 'v_p0',....,]
         # print(S,I,R,Q,SQ,trajs['get_test'].sum(),trajs['true_positive_ind'].sum(),number_of_total_tests,n_star,number_of_group_tests,TP,TN,FP,FN,file=file_log)
         log_exp_table.append(
             [S, I, R, Q, SQ, trajs['get_test'].sum(), trajs['true_positive_ind'].sum(), number_of_total_tests, n_star,
-             number_of_group_tests, TP, TN, FP, FN, n_star_this, mean_day, increasing_phase])
+             number_of_group_tests, TP, TN, FP, FN, n_star_this, mean_day, increasing_phase,v_mean,v_std]+[v_pt for v_pt in v_percentiles])
         # control test round
         if test_policy == 'round':
             if (k == test_round):
@@ -624,6 +635,8 @@ if __name__ == '__main__':
     # se_down_all = lowess_data(n_list, se_down_all, 'sed')
     # se_up_all.to_csv('100_pcr_se_up.csv')
     # se_down_all.to_csv('100_pcr_se_down.csv')
+
+
     # # task 2: estimate sep/sed for antigen
     # all_results = []
     # seed_params = [[i, parameter_set_antigen] for i in range(cpu_count)]
@@ -657,8 +670,12 @@ if __name__ == '__main__':
     se_down_pcr = get_n_star(se_down_pcr, parameter_set_pcr['n_list'], parameter_set_pcr['sp'])
     seed_params_pcr = [0, parameter_set_pcr, se_up_pcr, se_down_pcr, 'pcr_test']
     result_record, result_se_up, result_se_down = get_results_with_table(seed_params_pcr)
+    result_record[['v_pt_'+str(pt) for pt in [15,50,85]]].plot()
 
-    se_up_antigen = get_n_star(se_up_antigen, parameter_set_antigen['n_list'], parameter_set_antigen['sp'])
-    se_down_antigen = get_n_star(se_down_antigen, parameter_set_antigen['n_list'], parameter_set_antigen['sp'])
-    seed_params_antigen = [0, parameter_set_pcr, se_up_antigen, se_down_antigen, 'antigen_test']
-    result_record_antigen, result_se_up_antigen, result_se_down_antigen = get_results_with_table(seed_params_antigen)
+
+
+    #se_up_antigen = get_n_star(se_up_antigen, parameter_set_antigen['n_list'], parameter_set_antigen['sp'])
+    #se_down_antigen = get_n_star(se_down_antigen, parameter_set_antigen['n_list'], parameter_set_antigen['sp'])
+    #seed_params_antigen = [0, parameter_set_pcr, se_up_antigen, se_down_antigen, 'antigen_test']
+    #result_record_antigen, result_se_up_antigen, result_se_down_antigen = get_results_with_table(seed_params_antigen)
+
