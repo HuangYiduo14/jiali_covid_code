@@ -159,6 +159,14 @@ def group_test(df_trajs, n, daily_test_cap, parameters):
         # assert TP + TN + FP + FN == df_v_load['get_test'].sum()
         number_of_total_tests = df_v_load['get_test'].sum()
         number_of_group_tests = 0
+        v_load_vec = df_v_load.loc[df_v_load['is_I'], 'log10vload'].values
+        if len(v_load_vec) == 0:
+            percentiles = [0 for _ in interested_percentiles]
+            v_mean = v_std = 0
+        else:
+            percentiles = np.percentile(v_load_vec, interested_percentiles)
+            v_mean = np.mean(v_load_vec)
+            v_std = np.std(v_load_vec)
         return df_v_load, number_of_total_tests, number_of_group_tests, TP, TN, FP, FN,  percentiles, v_mean, v_std
 
     df_v_load = df_trajs.loc[
