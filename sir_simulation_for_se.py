@@ -159,7 +159,7 @@ def group_test(df_trajs, n, daily_test_cap, parameters):
         # assert TP + TN + FP + FN == df_v_load['get_test'].sum()
         number_of_total_tests = df_v_load['get_test'].sum()
         number_of_group_tests = 0
-        return df_v_load, number_of_total_tests, number_of_group_tests, TP, TN, FP, FN
+        return df_v_load, number_of_total_tests, number_of_group_tests, TP, TN, FP, FN,  percentiles, v_mean, v_std
 
     df_v_load = df_trajs.loc[
         df_trajs['need_test_today'] > 0, ['log10vload', 'is_I']].copy()  # we select people that need test only
@@ -639,7 +639,6 @@ if __name__ == '__main__':
 
     # # task 2: estimate sep/sed for antigen
     # all_results = []
-    # seed_params = [[i, parameter_set_antigen] for i in range(cpu_count)]
     # with multiprocessing.Pool(cpu_count) as pool:
     #     for result in tqdm.tqdm(pool.imap_unordered(get_results_no_table, seed_params), total=len(seed_params)):
     #         all_results.append(result)
@@ -671,6 +670,7 @@ if __name__ == '__main__':
     seed_params_pcr = [0, parameter_set_pcr, se_up_pcr, se_down_pcr, 'pcr_test']
     result_record, result_se_up, result_se_down = get_results_with_table(seed_params_pcr)
     result_record[['v_pt_'+str(pt) for pt in [15,50,85]]].plot()
+
 
 
 
